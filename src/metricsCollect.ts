@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { scan } from "./astGrep.js";
@@ -23,6 +24,27 @@ const HOOK_NAMES = ["useState", "useEffect", "useMemo", "useCallback", "useRef"]
 // Resource<T>/QueryState union should own.
 const PROGRESS_FLAG =
   /^(is)?\w*([lL]oading|[pP]ending|[fF]etching|[sS]aving|[bB]usy|[rR]efreshing|[sS]canning|[eE]xporting|[iI]mporting|[sS]yncing|[sS]ubmitting|[pP]rocessing|[gG]enerating|[bB]uilding|[cC]onnecting)$/;
+
+/**
+ * Metrics describe the PROJECT — its tracked source — so gitignored files
+ * (generated code, local build output) are dropped. Without this the numbers
+ * depend on which machine ran them: a fresh CI checkout has no generated
+ * files, a dev tree does, and the p90s disagree (observed: p90ContextCost
+ * 20 locally vs 21 in CI on the same commit). The ast-grep-backed counters
+ * were already deterministic — ast-grep honors .gitignore natively.
+ */
+function dropGitignored(files: string[]): string[] {
+  if (files.length === 0) return files;
+  const res = spawnSync("git", ["check-ignore", "--stdin"], {
+    input: files.join("\n"),
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  // Outside a repo (or git missing) there is no ignore standard to apply.
+  if (res.error || res.status === null || res.status > 1) return files;
+  const ignored = new Set(res.stdout.split("\n").filter((l) => l !== ""));
+  return files.filter((f) => !ignored.has(f));
+}
 
 export interface CollectedMetrics {
   components: ComponentMetrics[];
@@ -212,8 +234,8 @@ function collectStoreMetrics(sf: ts.SourceFile, store: StoreMetrics): void {
 }
 
 export function collectMetrics(targets: string[]): CollectedMetrics {
-  const allFiles = collectFiles(targets, [".ts", ".tsx", ".jsx"]).filter(
-    (f) => !EXCLUDED_FILE.test(f),
+  const allFiles = dropGitignored(
+    collectFiles(targets, [".ts", ".tsx", ".jsx"]).filter((f) => !EXCLUDED_FILE.test(f)),
   );
 
   // Component spans come from the same ast-grep marker rule the structure
