@@ -1,0 +1,56 @@
+# ── rule body adopted from faceless-photo-lib `zod-no-optional-nullable` (wave 2 triage) ──
+# The two rules were duplicates; the faceless implementation is strictly better,
+# so the canon id keeps its message and takes that body. Why it is better here:
+# `z.$T().optional()` only matched a DIRECT call on `z` — it missed both
+# `UserSchema.optional()` and any chained builder (`z.string().min(1).optional()`).
+# The receiver anchor keeps it to real zod schemas. Measured: +14 findings, 0 lost.
+#
+# The .tsx half of `zod-optional-nullable`.
+#
+# ast-grep's `typescript` and `tsx` languages are DISJOINT, not nested: a rule
+# at `language: typescript` matches `.ts` and NEVER `.tsx`, so
+# `zod-optional-nullable` was blind to every React component file — exactly
+# where a form's validation schema often lives, right next to the component
+# that uses it. Verified by effect — byte-identical content in `p.ts` and
+# `p.tsx`, the first flagged and the second silent.
+#
+# Three ways to cover both were tried and two were rejected on measurement:
+#   - `language: [typescript, tsx]` — ast-grep refuses to parse the rule.
+#   - `languageGlobs: {tsx: ["*.ts"]}` — reassigns `.ts` to the tsx language, so
+#     EVERY remaining `language: typescript` rule goes dark. Measured corpus-wide:
+#     5 rules blinded, 6,094 findings lost against 334 gained. It would have
+#     looked like a coverage win.
+#   - two files with the SAME id — "Error: Duplicate rule id".
+# So: a separate id per language. The trailing `-tsx` is what you suppress with
+# in a .tsx file, and the finding prints the id, so copying from the output is
+# always right.
+#
+# Keep this file's `rule:` block IDENTICAL to `zod-optional-nullable.yml`. They
+# are one rule wearing two ids because the tool has no way to say "both
+# languages".
+id: zod-optional-nullable-tsx
+language: tsx
+severity: warning
+message: |
+  `z.X().optional()` / `z.X().nullable()` makes invalid states representable.
+  Prefer a discriminated union with explicit states so the absent case is a named variant.
+  See zod-schemas skill and defensive-errors philosophy.
+  Suppressing this one needs the id you see above — `ast-grep-ignore: zod-optional-nullable-tsx`.
+  `zod-optional-nullable` is a DIFFERENT rule (the .ts arm) and does not cover it; ast-grep
+  matches suppression ids exactly. A bare `// ast-grep-ignore` suppresses every
+  rule on the line, and a wrong id is reported back as `unused-suppression`.
+rule:
+  all:
+    - kind: call_expression
+      has:
+        field: function
+        kind: member_expression
+        has:
+          field: property
+          regex: "^(optional|nullable|nullish)$"
+    # Anchor: the receiver chain mentions `z` or a `*Schema` binding, i.e. this
+    # really is a zod schema and not an unrelated builder with the same method.
+    - has:
+        stopBy: end
+        kind: identifier
+        regex: "^(z|.*Schema)$"

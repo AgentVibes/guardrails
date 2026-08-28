@@ -194,6 +194,12 @@ const EXPECTATIONS: Expectation[] = [
     goodSuffix: "zod-optional-nullable/good.ts",
   },
   {
+    rule: "zod-optional-nullable-tsx",
+    badSuffix: "zod-optional-nullable/bad.tsx",
+    hits: 6,
+    goodSuffix: "zod-optional-nullable/good.tsx",
+  },
+  {
     rule: "non-exhaustive-match",
     badSuffix: "non-exhaustive-match/bad.ts",
     hits: 2,
