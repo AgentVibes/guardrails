@@ -1,6 +1,19 @@
 id: component-decl
 language: tsx
 severity: info
+# Same out-of-scope surface every canon rule declares: tests, stories, and
+# showcase files are legitimate multi-component / oversized territory (a
+# showcase screen IS a bundle of demo components). Found by the first real
+# adoption (observatory): without this, a reformat touching a showcase file's
+# declaration lines turned the verify-diff ratchet red on fixture code.
+# Metrics already excluded these paths on its own; now the structure findings
+# agree with it.
+ignores:
+  - '**/*.test.tsx'
+  - '**/*.spec.tsx'
+  - '**/__tests__/**'
+  - '**/showcase/**'
+  - '**/*.stories.tsx'
 message: |
   Marker rule — matches every top-level React component declaration so
   check-structure.sh can count them per file and measure their spans.
