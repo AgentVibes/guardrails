@@ -103,6 +103,45 @@ git add gateRedTeam.ts && git commit -m "red-team the guardrails gate" && git pu
 
 A gate that has never been seen red proves nothing — do not skip this.
 
+## Stop hook
+
+`guardrails hook-stop` is the "cannot say done over red findings" echelon: on
+Claude Code's Stop event it runs the verify-diff ratchet over the session's
+changed files and blocks the stop while NEW error-tier findings remain. Loop
+breaker built in: after 3 blocks in one session (env
+`GUARDRAILS_STOP_MAX_BLOCKS`) it stops blocking and prints a loud warning
+instead — a wedged agent is worse than undercleaned code, and CI holds the
+same line anyway. Like hook-postedit, it never fails the session on its own
+defects.
+
+```json
+{ "hooks": { "Stop": [ { "hooks": [{ "type": "command",
+  "command": "pnpm exec guardrails hook-stop" }] } ] } }
+```
+
+For a USER-level install (synced settings.json, per-machine tools), route
+both hooks through an opt-hook.sh-style wrapper that no-ops when the tool is
+absent on a host — a bare command errors on every event on machines without
+the package.
+
+## Iterate harness
+
+`guardrails iterate --task <file|text> --cmd '<runner>'` is the
+iterate-until-pass loop for cheap-model campaigns: run the agent command, run
+the gate ITSELF (never trusting the agent's report), feed the findings back as
+the next prompt's compact feedback, repeat to green or `--max` (default 6;
+`--gate` overrides the default `verify-diff`). The runner gets the prompt on
+stdin and via `$GUARDRAILS_PROMPT_FILE`, plus `$GUARDRAILS_ATTEMPT`:
+
+```sh
+guardrails iterate --task task.md \
+  --cmd 'claude -p "$(cat "$GUARDRAILS_PROMPT_FILE")" --model sonnet' \
+  --gate 'pnpm exec guardrails verify-diff && pnpm exec guardrails metrics --check'
+```
+
+Every attempt's tuple (agent exit, gate exit, gate tail, duration) is recorded
+and printed (`--json` for harness pipelines).
+
 ## Post-edit hook
 
 `guardrails hook-postedit` is the Claude Code PostToolUse hook: it reads the

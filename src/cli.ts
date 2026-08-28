@@ -1,9 +1,12 @@
 #!/usr/bin/env node
+import { fileURLToPath } from "node:url";
 import { match } from "ts-pattern";
 import { runDeploy } from "./deploy.js";
 import { runDoctor } from "./doctor.js";
 import { runHookPostedit } from "./hookPostedit.js";
+import { runHookStop } from "./hookStop.js";
 import { runInit } from "./init.js";
+import { runIterate } from "./iterate.js";
 import { runLeaks } from "./leaks.js";
 import { runMetrics } from "./metrics.js";
 import { ToolMissingError } from "./toolResolve.js";
@@ -41,6 +44,13 @@ Usage:
                                       JSON on stdin, scans the edited .ts/.tsx
                                       file on its changed lines; blocks on
                                       error-tier findings
+  guardrails hook-stop                Claude Code Stop hook: verify-diff over
+                                      the session's changed files; blocks
+                                      "done" over new error-tier findings
+                                      (max 3 blocks/session, then loud skip)
+  guardrails iterate --task T --cmd C iterate-until-pass harness: run agent
+                                      command, run the gate, feed findings
+                                      back, repeat to green or --max (6)
 
 All subcommands accept --json.
 Exit codes: 0 ok · 1 findings/regression · 2 usage, missing tool, or missing baseline
@@ -83,6 +93,10 @@ async function main(argv: string[]): Promise<number> {
     console.error("guardrails: --baseline requires a path argument");
     return 2;
   }
+  const task = takeValueFlag("--task") ?? undefined;
+  const cmd = takeValueFlag("--cmd") ?? undefined;
+  const gateCmd = takeValueFlag("--gate") ?? undefined;
+  const max = takeValueFlag("--max") ?? undefined;
   const check = takeBoolFlag("--check");
   const updateBaseline = takeBoolFlag("--update-baseline");
   const force = takeBoolFlag("--force");
@@ -100,6 +114,17 @@ async function main(argv: string[]): Promise<number> {
     .with("leaks", () => runLeaks(filtered, json))
     .with("deploy", () => runDeploy(filtered, json))
     .with("hook-postedit", () => runHookPostedit())
+    .with("hook-stop", () => runHookStop())
+    .with("iterate", () =>
+      runIterate({
+        task,
+        cmd,
+        gate: gateCmd,
+        max: Number(max ?? 6),
+        json,
+        cliPath: fileURLToPath(import.meta.url),
+      }),
+    )
     .otherwise(() => {
       console.error(`guardrails: unknown subcommand '${command}'\n`);
       console.error(USAGE);

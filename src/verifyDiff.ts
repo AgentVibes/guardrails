@@ -94,10 +94,39 @@ function planFor(rung: Rung): Plan {
     .exhaustive();
 }
 
+export interface VerifyDiffResult {
+  rungLabel: string;
+  filesScanned: number;
+  violations: Finding[];
+}
+
+/** The verify-diff computation without reporting — shared by the CLI command and hook-stop. */
+export function runVerifyDiffCollect(cwd: string, base: string | undefined): VerifyDiffResult {
+  const severityArgs = severityRaiseArgs(cwd);
+  const plan = planFor(resolveRung(cwd, base));
+  const exclude = verifyExcludeRe(cwd);
+  if (exclude !== undefined && plan.files !== undefined) {
+    // changedFiles yields absolute paths; the exclude regex (donor precedent:
+    // '^packages/site-chrome/') is written against repo-root-relative ones.
+    plan.files = plan.files.filter((f) => !exclude.test(relative(cwd, f)));
+  }
+  if (plan.files !== undefined && plan.files.length === 0) {
+    return { rungLabel: plan.rungLabel, filesScanned: 0, violations: [] };
+  }
+  const targets = plan.files ?? ["."];
+  const violations = [
+    ...scanFindings(rulesConfig, targets, severityArgs),
+    ...structureFindings(targets),
+  ]
+    .filter((f) => f.severity === "error")
+    .filter(plan.keep);
+  return { rungLabel: plan.rungLabel, filesScanned: plan.files?.length ?? -1, violations };
+}
+
 export function runVerifyDiff(base: string | undefined, json: boolean): number {
-  let severityArgs: string[];
+  let result: VerifyDiffResult;
   try {
-    severityArgs = severityRaiseArgs(process.cwd());
+    result = runVerifyDiffCollect(process.cwd(), base);
   } catch (err) {
     if (err instanceof SeverityConfigError) {
       console.error(`guardrails verify-diff: ${err.message}`);
@@ -105,28 +134,14 @@ export function runVerifyDiff(base: string | undefined, json: boolean): number {
     }
     throw err;
   }
-  const plan = planFor(resolveRung(process.cwd(), base));
-  const exclude = verifyExcludeRe(process.cwd());
-  if (exclude !== undefined && plan.files !== undefined) {
-    // changedFiles yields absolute paths; the exclude regex (donor precedent:
-    // '^packages/site-chrome/') is written against repo-root-relative ones.
-    plan.files = plan.files.filter((f) => !exclude.test(relative(process.cwd(), f)));
-  }
-  const targets = plan.files ?? ["."];
-
-  if (plan.files !== undefined && plan.files.length === 0) {
-    report(json, plan.rungLabel, 0, [], "no changed .ts/.tsx files — nothing to gate");
+  const { rungLabel, filesScanned, violations: gated } = result;
+  if (filesScanned === 0) {
+    report(json, rungLabel, 0, [], "no changed .ts/.tsx files — nothing to gate");
     return 0;
   }
-
-  const gated = [...scanFindings(rulesConfig, targets, severityArgs), ...structureFindings(targets)]
-    .filter((f) => f.severity === "error")
-    .filter(plan.keep);
-
-  const filesScanned = plan.files?.length ?? -1;
   report(
     json,
-    plan.rungLabel,
+    rungLabel,
     filesScanned,
     gated,
     gated.length === 0
