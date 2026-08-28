@@ -1,0 +1,70 @@
+# PROMOTED to canon in wave 2 from PPA `r4-ternary-on-discriminator` (rule-triage).
+#
+# The only one of the 11 PPA R-rules that was actually firing (18 hits in the
+# audit), and the triage question was whether it duplicates something canon
+# already has. Measured on tg-gallery + observatory, it does not — the three
+# rules partition the space cleanly:
+#
+#   kind-if-without-match   27 hits   `if` on a discriminator
+#   jsx-ternary            105 hits   ternary whose branches are JSX
+#   this rule               18 hits   ternary on a discriminator yielding VALUES
+#
+#   r4 ∩ jsx-ternary = 0        r4 ∩ kind-if-without-match = 0
+#
+# The `not` clause below makes that disjointness structural rather than lucky:
+# a ternary with a JSX branch belongs to `jsx-ternary` and is skipped here, so
+# the two can never double-report the same line with the same fix.
+#
+# What it actually finds is the terse option-unwrap —
+# `m.kind === "some" ? m.value : []` — which reads fine until the union grows a
+# third member and the `:` branch silently absorbs it.
+id: discriminator-ternary
+language: tsx
+severity: warning
+utils:
+  # A JSX subtree, however many redundant parens wrap it. Same helper
+  # `jsx-ternary` uses, so the two rules agree on what "a JSX branch" means.
+  is-jsx:
+    any:
+      - kind: jsx_element
+      - kind: jsx_self_closing_element
+      - all:
+          - kind: parenthesized_expression
+          - has:
+              matches: is-jsx
+message: |
+  A ternary branching on a discriminator field. Both arms are written, so
+  nothing breaks today — what breaks is the next variant: widen the union and
+  the `:` branch silently absorbs it, with no build error anywhere.
+    m.kind === "some" ? m.value : []
+    → match(m).with({ kind: "some" }, ({ value }) => value).with({ kind: "none" }, () => []).exhaustive()
+  Match the value, not a boolean derived from it — that is what turns adding a
+  variant into a type error.
+  Related but different: `kind-if-without-match` covers the `if` spelling, and
+  `jsx-ternary` covers ternaries that render JSX. This rule deliberately stands
+  down when a branch is JSX so the two never report the same line twice.
+  See defensive-errors Rule 1 & 2.
+rule:
+  all:
+    - kind: ternary_expression
+    - has:
+        field: condition
+        kind: binary_expression
+        all:
+          - has:
+              field: operator
+              regex: '^(===|!==)$'
+          - has:
+              field: left
+              kind: member_expression
+              has:
+                field: property
+                regex: '^(kind|status|state|type|provider|providerId|reason|mode|variant|tag)$'
+    - not:
+        any:
+          - has:
+              field: consequence
+              matches: is-jsx
+          - has:
+              field: alternative
+              matches: is-jsx

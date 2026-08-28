@@ -1,0 +1,71 @@
+# PROMOTED to canon in wave 2 from PPA `r14-literal-union-in-component` (rule-triage).
+#
+# Generic, not PPA-specific: the house store layout already states it — report §8
+# puts «string-literal union'ы вроде `type Tab = "tasks" | "habits"`, которым
+# запрещено жить в файлах компонентов» in the `ui/` tier of the four-level model.
+# The PPA original hard-coded `apps/ppa/components/**` and `apps/ppa/app/**`;
+# the globs below are the same intent stated for any repo.
+#
+# 23 hits across tg-gallery + observatory with the PPA globs stripped, so it is
+# a live rule elsewhere and not a local house style.
+id: literal-union-in-component
+language: typescript
+severity: warning
+files:
+  - '**/components/**/*.ts'
+  - '**/components/**/*.tsx'
+  - '**/screens/**/*.ts'
+  - '**/screens/**/*.tsx'
+  - '**/app/**/*.ts'
+  - '**/app/**/*.tsx'
+ignores:
+  - '**/__tests__/**'
+  - '**/*.test.ts'
+  - '**/*.test.tsx'
+  - '**/_fixture.ts'
+  - '**/_fixtures.ts'
+message: |
+  A string-literal union declared inside a component file. Every component that
+  touches the same concept redeclares it, and the copies drift — one file grows
+  a `"archived"` member the others never hear about, and nothing fails to build
+  because each copy is internally consistent.
+  Move it to where the state it describes lives:
+    - a UI-tier store, next to the actions that mutate it, when it IS state
+      (`type Tab = "tasks" | "habits"` belongs to the store that owns the tab), or
+    - a shared module as a typed constant + alias when it is purely lexical
+      (file kinds, palette names) with no state attached.
+  Component prop types then consume the shared type instead of restating it.
+  See the mobx-models skill and report §8.
+rule:
+  all:
+    - kind: type_alias_declaration
+    # Two or more STRING members on the union's own spine. The spine matters:
+    # tree-sitter nests unions left-associatively, so a 3-member union is
+    # `union_type(union_type(lit, lit), lit)` and a 2-member one is
+    # `union_type(lit, lit)` — hence the two arms. Searching with `stopBy: end`
+    # instead would reach literals nested INSIDE object members and flag
+    # `{ status: "idle" } | { status: "ready" }`, the discriminated union this
+    # codebase wants everywhere.
+    - has:
+        field: value
+        kind: union_type
+        any:
+          # three or more members
+          - has:
+              kind: union_type
+              has:
+                kind: literal_type
+                has:
+                  kind: string
+          # exactly two members
+          - has:
+              all:
+                - kind: literal_type
+                - has:
+                    kind: string
+                - follows:
+                    stopBy: end
+                    all:
+                      - kind: literal_type
+                      - has:
+                          kind: string

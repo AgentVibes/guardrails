@@ -144,7 +144,31 @@ that this package contains none.
 - `structure/` — the `component-decl` marker rule the CLI turns into
   `react-multi-component` / `react-component-too-long` /
   `react-component-needs-folder` findings.
-- `candidates/` — un-triaged imports (PPA R-rules); loaded nowhere.
+- `candidates/` — triaged in wave 2. Three PPA R-rules were promoted into
+  `rules/`; the eight that remain are repo-local by decision, with the reason
+  for each recorded in `candidates/README.md`. Still loaded nowhere.
+
+## Repo-local extra rules
+
+A rule that encodes ONE repo's convention does not belong in the canon — but it
+should still run. `guardrails init` already writes the second `ruleDir`
+commented out; uncomment it and drop the rule in:
+
+```yaml
+# sgconfig.yml
+ruleDirs:
+  - node_modules/@agentvibes/guardrails/rules
+  - .ast-grep/rules          # repo-local extras
+```
+
+Both directories load together and findings print their own rule id, so a local
+rule suppresses under its own name. Verified: a canon rule and a repo-local rule
+firing side by side in one `ast-grep scan -c sgconfig.yml` run.
+
+Keep local ids distinct from canon ids — ast-grep refuses to load two rules with
+the same id, and a repo-local override of a canon rule is a silent fork rather
+than a fix. If a local rule turns out to be generally useful, promote it here
+with fixtures instead of copying it into a second repo.
 
 ## Development
 

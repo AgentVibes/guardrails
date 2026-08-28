@@ -1,0 +1,41 @@
+# PROMOTED to canon in wave 2 from faceless-photo-lib/.ast-grep (rule-triage).
+# No canon equivalent existed: `non-exhaustive-match` is about PREFERRING
+# `.exhaustive()` over `.otherwise()`, which is a style call the owner has
+# explicitly deferred (decision #4). This is the different, non-negotiable
+# half — a chain with NO terminator evaluates to a builder object, so every
+# arm body is dead code and the truthy builder keeps the caller compiling.
+# Verified on real code: took a terminated chain out of observatory, deleted
+# `.exhaustive()` -> fires; left it -> silent; a dangling chain nested in a
+# callback of an OUTER terminated chain -> fires on the inner one only;
+# `"abc".match(/b/)` -> silent.
+#
+# TSX twin of ts-pattern-dangling-match (ast-grep rules are single-language, so
+# .tsx components get their own rule). Same policy — see
+# ts-pattern-dangling-match.yml for the full rationale. This twin carries most of
+# the repo's JSX-embedded `{match(state)...}` render branches.
+id: ts-pattern-dangling-match-tsx
+language: tsx
+severity: error
+message: "ts-pattern `match()` chain has no terminator — it evaluates to a builder, not a value. Add `.exhaustive()` (project.md §4)."
+note: "`.otherwise()` and `.run()` also terminate a chain; preferring `.exhaustive()` over `.otherwise()` is the separate ts-pattern-prefer-exhaustive rule."
+rule:
+  all:
+    - kind: call_expression
+      has:
+        field: function
+        kind: identifier
+        regex: "^match$"
+    - not:
+        inside:
+          stopBy:
+            not:
+              any:
+                - kind: member_expression
+                - kind: call_expression
+          kind: call_expression
+          has:
+            field: function
+            kind: member_expression
+            has:
+              field: property
+              regex: "^(exhaustive|otherwise|run)$"

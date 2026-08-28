@@ -1,0 +1,44 @@
+# PROMOTED to canon in wave 2 from PPA `r1a-hardcoded-url-in-component` (rule-triage).
+#
+# Promoted because it enforces a rule that is already house-wide rather than
+# PPA-local: CLAUDE.md's "No localhost" section — every service URL comes from
+# `dev url [project]`, never a literal, and `*.pg1.yatsyk.com` is legacy that no
+# new code may reference. A URL baked into a component is also the thing that
+# makes a component un-reusable and un-testable, which is the same boundary
+# `ui-imports-app-store` guards from the other side.
+#
+# Only 2 hits across tg-gallery + observatory — a clean ratchet on new code
+# rather than a cleanup campaign. The PPA original pointed at
+# `apps/ppa/lib/constants/urls.ts`; the message below states the destination
+# generically.
+id: hardcoded-url-in-component
+language: tsx
+severity: warning
+files:
+  - '**/components/**/*.ts'
+  - '**/components/**/*.tsx'
+  - '**/screens/**/*.ts'
+  - '**/screens/**/*.tsx'
+ignores:
+  - '**/__tests__/**'
+  - '**/*.test.ts'
+  - '**/*.test.tsx'
+  - '**/showcase/**'
+  - '**/*.stories.tsx'
+message: |
+  A hardcoded URL in a component file. The component now knows which
+  environment it is in, so it cannot be rendered in a test, a story or a second
+  deployment without editing it — and a URL that moves has to be found by grep
+  rather than changed in one place.
+  Put it in a constants module and read it from there (or from a store computed
+  when it varies at runtime). Service URLs in this codebase come from
+  `dev url [project]`, never a literal — see CLAUDE.md "No localhost", which
+  also retires `*.pg1.yatsyk.com` for new code.
+  Documentation links and `xmlns` schema URLs are the honest exceptions;
+  suppress those with a reason.
+rule:
+  all:
+    - kind: string
+    - regex: '^["'']https?://'
+    - not:
+        regex: 'w3\.org|schema\.org|json-schema\.org'

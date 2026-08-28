@@ -139,6 +139,21 @@ const EXPECTATIONS: Expectation[] = [
     hits: 2,
     goodSuffix: "store-no-setinterval-poll/good.tsx",
   },
+  // ── wave 2: rule-triage ───────────────────────────────────────────────
+  // Promoted from the two local collections.
+  { rule: "ts-pattern-dangling-match", badSuffix: "ts-pattern-dangling-match/bad.ts", hits: 2, goodSuffix: "ts-pattern-dangling-match/good.ts" },
+  { rule: "discriminator-ternary", badSuffix: "discriminator-ternary/bad.tsx", hits: 6, goodSuffix: "discriminator-ternary/good.tsx" },
+  { rule: "literal-union-in-component", badSuffix: "literal-union-in-component/components/bad.ts", hits: 4, goodSuffix: "literal-union-in-component/components/good.ts" },
+  { rule: "hardcoded-url-in-component", badSuffix: "hardcoded-url-in-component/components/bad.tsx", hits: 4, goodSuffix: "hardcoded-url-in-component/components/good.tsx" },
+  // Five canon rules whose bodies were replaced by the (strictly better)
+  // faceless implementations. These fixtures exist to pin the coverage the
+  // upgrade ADDED — every bad.ts here carries the edge cases the old body
+  // missed, so a revert cannot pass silently.
+  { rule: "as-any-escape", badSuffix: "as-any-escape/bad.ts", hits: 4, goodSuffix: "as-any-escape/good.ts" },
+  { rule: "catch-empty", badSuffix: "catch-empty/bad.ts", hits: 4, goodSuffix: "catch-empty/good.ts" },
+  { rule: "instanceof-map-set", badSuffix: "instanceof-map-set/bad.ts", hits: 4, goodSuffix: "instanceof-map-set/good.ts" },
+  { rule: "zod-optional-nullable", badSuffix: "zod-optional-nullable/bad.ts", hits: 6, goodSuffix: "zod-optional-nullable/good.ts" },
+  { rule: "non-exhaustive-match", badSuffix: "non-exhaustive-match/bad.ts", hits: 2, goodSuffix: "non-exhaustive-match/good.ts" },
 ];
 
 // A file that is deliberately out of scope — same offending code as the bad

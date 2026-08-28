@@ -1,0 +1,63 @@
+# PROMOTED to canon in wave 2 from faceless-photo-lib/.ast-grep (rule-triage).
+# No canon equivalent existed: `non-exhaustive-match` is about PREFERRING
+# `.exhaustive()` over `.otherwise()`, which is a style call the owner has
+# explicitly deferred (decision #4). This is the different, non-negotiable
+# half — a chain with NO terminator evaluates to a builder object, so every
+# arm body is dead code and the truthy builder keeps the caller compiling.
+# Verified on real code: took a terminated chain out of observatory, deleted
+# `.exhaustive()` -> fires; left it -> silent; a dangling chain nested in a
+# callback of an OUTER terminated chain -> fires on the inner one only;
+# `"abc".match(/b/)` -> silent.
+#
+# ts-pattern-dangling-match (convention-rules-ci task 2.4; project.md §3 and §4
+# "`match().exhaustive()` everywhere").
+#
+# A `match(...)` chain that is never terminated does not evaluate anything — it
+# leaves a ts-pattern *builder object* where the caller expects a value. That is
+# always a bug, and a silent one: the builder is truthy, so `if`/JSX/`return`
+# paths keep working while every branch body is dead code.
+#
+# This rule is the hard gate: it fires only when a chain has NO terminator at
+# all (`.exhaustive()`, `.otherwise()`, or `.run()`). Preferring `.exhaustive()`
+# over `.otherwise()` is the separate, advisory `ts-pattern-prefer-exhaustive`
+# rule, because `.otherwise()` is legitimate when matching an OPEN domain (an
+# external boundary string, say) that no union can enumerate.
+#
+# Implementation notes:
+#   - The target is a call_expression whose callee is the bare identifier
+#     `match`, so `someString.match(re)` (the RegExp method) is never confused
+#     for ts-pattern.
+#   - The terminator search walks ONLY the member/call spine of this chain — the
+#     `stopBy` halts at the first ancestor that is neither, so an enclosing
+#     terminated chain cannot mask a dangling chain nested in one of its
+#     callbacks.
+#   - Terminators are matched structurally (`kind` + `regex`) rather than with a
+#     surface `pattern:`, because ast-grep's default `smart` strictness also
+#     compares interleaved `comment` nodes — and these chains carry per-arm
+#     comments constantly, which would produce false positives.
+id: ts-pattern-dangling-match
+language: typescript
+severity: error
+message: "ts-pattern `match()` chain has no terminator — it evaluates to a builder, not a value. Add `.exhaustive()` (project.md §4)."
+note: "`.otherwise()` and `.run()` also terminate a chain; preferring `.exhaustive()` over `.otherwise()` is the separate ts-pattern-prefer-exhaustive rule."
+rule:
+  all:
+    - kind: call_expression
+      has:
+        field: function
+        kind: identifier
+        regex: "^match$"
+    - not:
+        inside:
+          stopBy:
+            not:
+              any:
+                - kind: member_expression
+                - kind: call_expression
+          kind: call_expression
+          has:
+            field: function
+            kind: member_expression
+            has:
+              field: property
+              regex: "^(exhaustive|otherwise|run)$"
