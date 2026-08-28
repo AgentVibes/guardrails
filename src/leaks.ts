@@ -68,12 +68,12 @@ function parsePatternFile(path: string): LeakPattern[] {
   return patterns;
 }
 
-async function loadPatterns(cwd: string): Promise<LoadedPatterns> {
+async function loadPatterns(cwd: string, extraPatternFiles: string[]): Promise<LoadedPatterns> {
   const patterns = [...LEAK_PATTERNS];
   const sources = [`built-in generic (${LEAK_PATTERNS.length})`];
   const exemptFiles = new Set<string>();
 
-  const fileCandidates = [join(cwd, ".guardrails", "leaks.txt")];
+  const fileCandidates = [...extraPatternFiles, join(cwd, ".guardrails", "leaks.txt")];
   const leaksConfig = readTomlTable(join(cwd, ".agentvibes", "project.toml"), "leaks");
   const configured = leaksConfig.patterns_file;
   if (configured !== undefined && configured !== "") {
@@ -196,12 +196,24 @@ function runGitleaks(target: string): GitleaksResult {
   };
 }
 
-export async function runLeaks(targets: string[], json: boolean): Promise<number> {
+export async function runLeaks(
+  targets: string[],
+  json: boolean,
+  patternsFile?: string,
+): Promise<number> {
   const paths = targets.length > 0 ? targets : ["."];
+
+  // --patterns <file>: an EXTRA pattern file for this run — how a public
+  // repo's CI scans itself against a house list it must not ship (the list is
+  // fetched from a private repo at CI time and never committed here).
+  if (patternsFile !== undefined && !existsSync(patternsFile)) {
+    console.error(`guardrails leaks: --patterns file not found: ${patternsFile}`);
+    return 2;
+  }
 
   let loaded: LoadedPatterns;
   try {
-    loaded = await loadPatterns(process.cwd());
+    loaded = await loadPatterns(process.cwd(), patternsFile === undefined ? [] : [patternsFile]);
   } catch (err) {
     console.error(`guardrails leaks: ${err instanceof Error ? err.message : String(err)}`);
     return 2;

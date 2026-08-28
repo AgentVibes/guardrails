@@ -23,5 +23,24 @@ jobs:
 
       - run: pnpm check
 
+      # House-marker scan: the generic self-scan in `pnpm check` structurally
+      # CANNOT see private-infrastructure names (the marker list is private by
+      # design), which is exactly how a house domain slipped into a promoted
+      # rule's comments unnoticed. This step fetches the private list at CI
+      # time — never committed here — and fails the build on any hit. Secrets:
+      # HOUSE_LEAKS_REPO (owner/repo holding leaks.txt) + HOUSE_LEAKS_TOKEN
+      # (read access to it). Skips LOUDLY when unset (fork PRs).
+      - name: house-marker leaks scan
+        env:
+          HOUSE_LEAKS_REPO: ${{ secrets.HOUSE_LEAKS_REPO }}
+          HOUSE_LEAKS_TOKEN: ${{ secrets.HOUSE_LEAKS_TOKEN }}
+        run: |
+          if [ -z "$HOUSE_LEAKS_REPO" ] || [ -z "$HOUSE_LEAKS_TOKEN" ]; then
+            echo "::notice title=house leaks::HOUSE_LEAKS_REPO/TOKEN secrets unset — house-marker scan SKIPPED (generic scan still ran)."
+            exit 0
+          fi
+          git clone --depth=1 "https://x-access-token:${HOUSE_LEAKS_TOKEN}@github.com/${HOUSE_LEAKS_REPO}.git" /tmp/house-leaks
+          node dist/cli.js leaks . --patterns /tmp/house-leaks/leaks.txt
+
       - name: pack must succeed
         run: pnpm pack

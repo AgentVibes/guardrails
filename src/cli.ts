@@ -93,6 +93,7 @@ async function main(argv: string[]): Promise<number> {
     console.error("guardrails: --baseline requires a path argument");
     return 2;
   }
+  const patternsFile = takeValueFlag("--patterns") ?? undefined;
   const task = takeValueFlag("--task") ?? undefined;
   const cmd = takeValueFlag("--cmd") ?? undefined;
   const gateCmd = takeValueFlag("--gate") ?? undefined;
@@ -111,7 +112,7 @@ async function main(argv: string[]): Promise<number> {
     .with("metrics", () =>
       runMetrics({ targets: filtered, json, check, updateBaseline, force, snapshot, baselinePath }),
     )
-    .with("leaks", () => runLeaks(filtered, json))
+    .with("leaks", () => runLeaks(filtered, json, patternsFile))
     .with("deploy", () => runDeploy(filtered, json))
     .with("hook-postedit", () => runHookPostedit())
     .with("hook-stop", () => runHookStop())
