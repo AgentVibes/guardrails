@@ -1,0 +1,16 @@
+# Calls the reusable gate against this repo itself, so every push proves the
+# template runs green on a real repository (and exercises the loud-skip path:
+# this repo has no metrics baseline). Own-package bin resolves because pnpm
+# links this package's bin into node_modules/.bin and `prepare` builds dist.
+name: gate-selftest
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    uses: ./.github/workflows/guardrails-gate.yml
+    with:
+      leaks: true

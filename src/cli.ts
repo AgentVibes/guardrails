@@ -2,6 +2,7 @@
 import { match } from "ts-pattern";
 import { runDeploy } from "./deploy.js";
 import { runDoctor } from "./doctor.js";
+import { runHookPostedit } from "./hookPostedit.js";
 import { runInit } from "./init.js";
 import { runLeaks } from "./leaks.js";
 import { runMetrics } from "./metrics.js";
@@ -36,6 +37,10 @@ Usage:
                                       (guardrails-plugin-* dep, or [deploy]
                                       plugin= in .agentvibes/project.toml);
                                       the public CLI carries no topology
+  guardrails hook-postedit            Claude Code PostToolUse hook: reads hook
+                                      JSON on stdin, scans the edited .ts/.tsx
+                                      file on its changed lines; blocks on
+                                      error-tier findings
 
 All subcommands accept --json.
 Exit codes: 0 ok · 1 findings/regression · 2 usage, missing tool, or missing baseline
@@ -94,6 +99,7 @@ async function main(argv: string[]): Promise<number> {
     )
     .with("leaks", () => runLeaks(filtered, json))
     .with("deploy", () => runDeploy(filtered, json))
+    .with("hook-postedit", () => runHookPostedit())
     .otherwise(() => {
       console.error(`guardrails: unknown subcommand '${command}'\n`);
       console.error(USAGE);

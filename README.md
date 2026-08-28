@@ -55,6 +55,53 @@ where the outcome is recorded twice (loading flag + second outcome/payload
 field), while the metric also counts lone boolean progress-flag declarations
 (`loading = false` class fields) — the wider Resource<T> migration target.
 
+## CI gate (reusable workflow)
+
+Add the whole gate as one job:
+
+```yaml
+jobs:
+  guardrails:
+    uses: AgentVibes/guardrails/.github/workflows/guardrails-gate.yml@v0
+    # with:
+    #   leaks: true        # recommended for public repos
+    #   base: origin/main  # override the merge-base ladder
+```
+
+It checks out with full history, installs the pinned toolchain via mise, runs
+`pnpm install --frozen-lockfile`, then BLOCKING `guardrails verify-diff` and
+`guardrails metrics --check` (skipped with a loud `::notice::` when the repo
+has no `.guardrails/metrics.json` baseline — never silently). `@v0` is a
+moving tag that follows validated releases, actions-style; pin `@<commit-sha>`
+if your repo wants immutable supply-chain refs.
+
+**Mandatory adoption step — prove the gate can fail.** After wiring the job,
+open a throwaway PR containing an error-tier violation and watch it go red:
+
+```sh
+git checkout -b gate-red-team
+printf 'export const boom = (x: unknown) => x as any;\n' > gateRedTeam.ts
+git add gateRedTeam.ts && git commit -m "red-team the guardrails gate" && git push -u origin gate-red-team
+# open the PR → the guardrails job MUST fail on as-any-escape.
+# Then close the PR and delete the branch.
+```
+
+A gate that has never been seen red proves nothing — do not skip this.
+
+## Post-edit hook
+
+`guardrails hook-postedit` is the Claude Code PostToolUse hook: it reads the
+hook JSON on stdin, and for an Edit/Write of a .ts/.tsx file scans just that
+file, gating the lines the edit actually changed (merge-base ladder; Write,
+untracked files, and unresolvable bases degrade to whole-file — never to
+silence). Error-tier findings emit a blocking decision, warnings attach as
+context. Wire it in settings.json:
+
+```json
+{ "hooks": { "PostToolUse": [ { "matcher": "Edit|Write",
+  "hooks": [{ "type": "command", "command": "pnpm exec guardrails hook-postedit" }] } ] } }
+```
+
 ## Leak gate
 
 `guardrails leaks [paths]` is the public/private boundary gate: it scans every
