@@ -1,12 +1,10 @@
-// The private-infrastructure marker list for `guardrails leaks`. This file is
-// the ONE place the markers may appear in this public repo — the scanner
-// excludes any file named leakPatterns.* (source and dist twins) from its own
-// scan, the same self-exemption audit-sensitive.sh uses in agent-skills.
-//
-// The boundary rule (spec layer A″): public code holds mechanisms, private
-// config holds facts. No hostname, path, org name, or token belonging to the
-// private topology may appear anywhere else in this repo — red CI, not a
-// review-eyes convention.
+// Built-in patterns for `guardrails leaks` — GENERIC credential shapes only.
+// Deliberately NO infrastructure markers here: a list of private hostnames,
+// org names, or subnets is itself a fact about the private topology (spec
+// layer A″: code carries mechanisms, config carries facts), so house marker
+// lists reach the scanner through `.guardrails/leaks.txt`, a
+// `[leaks] patterns_file =` manifest entry, or a plugin's `leakPatterns()` —
+// never through this public package.
 
 export interface LeakPattern {
   id: string;
@@ -14,15 +12,6 @@ export interface LeakPattern {
 }
 
 export const LEAK_PATTERNS: LeakPattern[] = [
-  { id: "infra-domain", regex: /byokapi\.com/i },
-  { id: "owner-name", regex: /yatsyk/i },
-  { id: "infra-host", regex: /hzded/i },
-  { id: "legacy-zone", regex: /\bpg1\b/ },
-  { id: "ingress-name", regex: /dev-ingress/ },
-  { id: "sso-name", regex: /tinyauth/ },
-  { id: "vault-path", regex: /ObsidianSyncFolder/ },
-  { id: "home-path", regex: /\/home\/andrew/ },
-  { id: "lan-subnet", regex: /10\.10\.10\./ },
   { id: "github-token", regex: /\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36}\b/ },
   { id: "github-fine-grained-token", regex: /\bgithub_pat_[A-Za-z0-9_]{22,}\b/ },
   { id: "anthropic-key", regex: /\bsk-ant-[A-Za-z0-9-]{10,}\b/ },

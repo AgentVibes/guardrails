@@ -58,11 +58,13 @@ field), while the metric also counts lone boolean progress-flag declarations
 ## Leak gate
 
 `guardrails leaks [paths]` is the public/private boundary gate: it scans every
-text file for private-infrastructure markers and credential patterns (list in
-`src/leakPatterns.ts` — the one file allowed to hold them), runs gitleaks when
-available, and exits 1 on any hit. This repo runs it against itself in
-`pnpm check` and CI, so the public package can never ship a hostname of the
-topology it deploys to. Reuse it verbatim in any public repo's gate.
+text file for credential patterns, runs gitleaks when available, and exits 1
+on any hit. The package ships only generic credential shapes; house marker
+lists ship via private plugins/config — `.guardrails/leaks.txt`, a
+`[leaks] patterns_file =` manifest entry, or the plugin contract's
+`leakPatterns()` hook (see `@agentvibes/guardrails/plugin`). Pattern files are
+one regex per line (`<id> <regex>`, `#` comments) and are themselves exempt
+from the scan. This repo runs the gate against itself in `pnpm check` and CI.
 
 ## Deploy plugins
 

@@ -1,51 +1,61 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { packageRoot } from "./packagePaths.js";
 
-// Gate-can-go-red test for `guardrails leaks`: a fixture file carrying a
-// private-infrastructure marker must turn the gate red, and a clean file must
-// not. The marker is ASSEMBLED at runtime from halves so this test's own
-// source never contains it — otherwise the repo's self-scan (which this test
-// exists to keep honest) would flag the test.
+// Gate-can-go-red tests for `guardrails leaks`:
+//   1. a fixture with a credential-shaped string (built-in generic pattern)
+//      turns the gate red, a clean dir does not;
+//   2. the runtime pattern-loading mechanism works — a `.guardrails/leaks.txt`
+//      pattern fires on matching content, and the pattern file itself is
+//      exempt from the scan (it necessarily contains its own markers).
+// The token is ASSEMBLED from halves so this test's own source never
+// contains a credential-shaped string.
 
-const MARKER = ["byok", "api.com"].join("");
 const TOKENISH = ["ghp_", "a".repeat(36)].join("");
 
-function leaks(target: string): number {
+function leaks(cwd: string, target: string): number {
   const res = spawnSync("node", [join(packageRoot, "dist", "cli.js"), "leaks", target], {
+    cwd,
     encoding: "utf8",
   });
   if (res.error) throw res.error;
   return res.status ?? -1;
 }
 
+function expectExit(step: string, got: number, want: number): boolean {
+  if (got !== want) {
+    console.error(`FAIL leaks-red: ${step} exited ${got}, expected ${want}`);
+    return false;
+  }
+  console.log(`  ok  leaks-red: ${step} → exit ${want}`);
+  return true;
+}
+
 function main(): number {
   const dir = mkdtempSync(join(tmpdir(), "guardrails-leaks-red-"));
   try {
     const badFile = join(dir, "config.ts");
-    writeFileSync(
-      badFile,
-      `export const apiBase = "https://svc.${MARKER}";\nconst t = "${TOKENISH}";\n`,
-    );
-    const badExit = leaks(dir);
-    if (badExit !== 1) {
-      console.error(
-        `FAIL leaks-red: leaks on a dir containing an infra marker + token exited ${badExit}, expected 1 — the leak gate cannot go red`,
-      );
-      return 1;
-    }
-    console.log("  ok  leaks-red: marker + token fixture → leaks exit 1 (gate goes red)");
+    writeFileSync(badFile, `const t = "${TOKENISH}";\n`);
+    if (!expectExit("token-shaped fixture (gate goes red)", leaks(dir, "."), 1)) return 1;
 
     rmSync(badFile);
     writeFileSync(join(dir, "clean.ts"), 'export const apiBase = "https://example.invalid";\n');
-    const goodExit = leaks(dir);
-    if (goodExit !== 0) {
-      console.error(`FAIL leaks-red: leaks on a clean dir exited ${goodExit}, expected 0`);
+    if (!expectExit("clean dir (gate goes green)", leaks(dir, "."), 0)) return 1;
+
+    // Runtime pattern loading: a repo-local pattern file arms a marker the
+    // public package does not know.
+    mkdirSync(join(dir, ".guardrails"));
+    writeFileSync(join(dir, ".guardrails", "leaks.txt"), "custom-marker examplecorp-internal\n");
+    writeFileSync(join(dir, "infra.ts"), 'const host = "examplecorp-internal.example";\n');
+    if (!expectExit("repo-local pattern fires (leaks.txt mechanism)", leaks(dir, "."), 1)) return 1;
+
+    // The pattern file itself must be exempt — it contains its own marker.
+    rmSync(join(dir, "infra.ts"));
+    if (!expectExit("pattern file self-exempt (green with only leaks.txt)", leaks(dir, "."), 0)) {
       return 1;
     }
-    console.log("  ok  leaks-red: clean dir → leaks exit 0 (gate goes green)");
     return 0;
   } finally {
     rmSync(dir, { recursive: true, force: true });
