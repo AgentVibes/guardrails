@@ -46,6 +46,15 @@ on:
           pnpm 10.12.1
           ast-grep 0.45.2
           gitleaks 8.30.1
+      sibling_repos:
+        description: "space-separated owner/repo list to clone NEXT TO the checkout (../<repo-name>) before install — for workspaces whose overrides use `link:../<repo>/...` paths. Private siblings need the sibling_token secret (the default job token only reaches the current repo)."
+        required: false
+        type: string
+        default: ""
+    secrets:
+      sibling_token:
+        description: "token with read access to the sibling_repos; falls back to the job token (sufficient only for public siblings)"
+        required: false
 
 jobs:
   gate:
@@ -60,6 +69,20 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           tool_versions: ${{ inputs.tool_versions }}
+
+      # `link:../sibling/...` overrides resolve one level ABOVE the checkout,
+      # which actions/checkout cannot target — so plain clones. Shallow: the
+      # gate only needs the trees to exist for install to succeed.
+      - name: clone sibling repos
+        if: ${{ inputs.sibling_repos != '' }}
+        env:
+          SIBLING_TOKEN: ${{ secrets.sibling_token || github.token }}
+        run: |
+          for repo in ${{ inputs.sibling_repos }}; do
+            name="${repo##*/}"
+            echo "cloning $repo -> ../$name"
+            git clone --depth=1 "https://x-access-token:${SIBLING_TOKEN}@github.com/${repo}.git" "../${name}"
+          done
 
       - run: pnpm install --frozen-lockfile
 
