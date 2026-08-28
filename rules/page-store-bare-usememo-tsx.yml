@@ -1,0 +1,47 @@
+# ── simple-components, rule 2 of 4 ─────────────────────────────────────
+#
+# A page store built by a bare `useMemo` has no `dispose()` and no protection
+# against StrictMode's double-mount, so its reactions and subscriptions outlive
+# the page that opened it. Report §8: the `PageStoreManager` the mobx-models
+# skill prescribes exists in exactly one repo of the park, and everywhere else
+# page stores are hand-rolled on `useMemo` — one of them carrying the comment
+# "PageStoreManager is not yet wired — use direct useMemo".
+#
+# The canon rule `no-local-kit-clone` bans DECLARING your own `usePageStore`;
+# this bans skipping it. Different sites, no overlap.
+#
+# The .tsx half: ast-grep's `typescript` and `tsx` languages are disjoint, so the
+# same rule ships twice under two ids. This is the half that matters most — page
+# stores are created in components. Suppress with the id the finding PRINTS.
+id: page-store-bare-usememo-tsx
+language: tsx
+severity: error
+ignores:
+  - '**/*.test.tsx'
+  - '**/*.spec.tsx'
+  - '**/__tests__/**'
+message: |
+  A store constructed inside a bare `useMemo`. `useMemo` is a cache, not a
+  lifecycle: React may drop and rebuild the value, and it never tells anyone the
+  old one is dead — so the store's reactions, intervals and subscriptions keep
+  running, and StrictMode's double-mount builds two of them.
+  Use the sanctioned hook, which owns creation, ref-counting and disposal:
+    const store = usePageStore(() => new GalleryPageStore(rootStore, slug), [slug])
+  It ships in `@agentvibes/kit/react`. Pass dependencies to the constructor
+  explicitly so the store stays testable with `new GalleryPageStore(fake, "x")`
+  and no render at all.
+  See the simple-components skill (§store access) and report §8.
+rule:
+  all:
+    - kind: call_expression
+    - has:
+        field: function
+        kind: identifier
+        regex: '^useMemo$'
+    - has:
+        stopBy: end
+        kind: new_expression
+        has:
+          field: constructor
+          kind: identifier
+          regex: 'Store$'

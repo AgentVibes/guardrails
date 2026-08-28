@@ -205,6 +205,42 @@ const EXPECTATIONS: Expectation[] = [
     hits: 2,
     goodSuffix: "non-exhaustive-match/good.ts",
   },
+  {
+    rule: "store-context-provider",
+    badSuffix: "store-context-provider/bad.ts",
+    hits: 4,
+    goodSuffix: "store-context-provider/good.ts",
+  },
+  {
+    rule: "store-context-provider-tsx",
+    badSuffix: "store-context-provider/bad.tsx",
+    hits: 5,
+    goodSuffix: "store-context-provider/good.tsx",
+  },
+  {
+    rule: "page-store-bare-usememo",
+    badSuffix: "page-store-bare-usememo/bad.ts",
+    hits: 2,
+    goodSuffix: "page-store-bare-usememo/good.ts",
+  },
+  {
+    rule: "page-store-bare-usememo-tsx",
+    badSuffix: "page-store-bare-usememo/bad.tsx",
+    hits: 2,
+    goodSuffix: "page-store-bare-usememo/good.tsx",
+  },
+  {
+    rule: "view-file-logic",
+    badSuffix: "view-file-logic/bad.view.tsx",
+    hits: 3,
+    goodSuffix: "view-file-logic/good.view.tsx",
+  },
+  {
+    rule: "screen-file-styling",
+    badSuffix: "screen-file-styling/bad.screen.tsx",
+    hits: 3,
+    goodSuffix: "screen-file-styling/good.screen.tsx",
+  },
 ];
 
 // A file that is deliberately out of scope — same offending code as the bad

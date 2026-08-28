@@ -1,0 +1,53 @@
+# ── simple-components, rule 3 of 4 ─────────────────────────────────────
+#
+# The view half of the two-tier split (decision D8, report §9): a `*.view.tsx`
+# is props in, JSX out. No hooks, no `match`, no ternary, no data transformation.
+# That contract is what makes a view the file a cheap model writes without
+# getting it wrong, and what lets its test mount it with nothing around it.
+#
+# WARNING TIER ON PURPOSE. D8 ships the split as a recommendation first, with a
+# ratchet on the share of view files — not as a hard gate. Raising this to error
+# would decide a question the owner deliberately parked. The store half of the
+# same contract is the canon's `view-imports-store` (error), which is a narrower
+# claim: no store access anywhere in the app's view files.
+#
+# `useTheme` / `useTokens` / `useStyles` / `useColorScheme` are exempt: the house
+# styling idiom is RN inline objects read from a theme hook (report §10), so
+# banning that hook would ban styling from the file that owns styling.
+id: view-file-logic
+language: tsx
+severity: warning
+files:
+  - '**/*.view.tsx'
+message: |
+  Logic in a `*.view.tsx`. A view renders the props it was handed and decides
+  nothing: no hooks, no `match`, no ternary, no formatting, no icon-picking.
+  Move the decision up to the logic component or the model, and hand the view
+  the ANSWER — `tone="danger"`, `formattedDate`, `icon` — not the input it would
+  have to branch on. Passing `status` and mapping it to colours inside the view
+  is the same branch, laundered.
+  Exempt: `useTheme` / `useTokens` / `useStyles` / `useColorScheme` — styling is
+  what a view owns.
+  See the simple-components skill (§two-tier) and report §9.
+rule:
+  any:
+    # Any hook call that is not a styling hook.
+    - all:
+        - kind: call_expression
+        - has:
+            field: function
+            kind: identifier
+            regex: '^use[A-Z]'
+        - not:
+            has:
+              field: function
+              kind: identifier
+              regex: '^use(Theme|Tokens|Styles|ColorScheme|Colors)$'
+    # Branching that belongs to the logic tier.
+    - all:
+        - kind: call_expression
+        - has:
+            field: function
+            kind: identifier
+            regex: '^match$'
+    - kind: ternary_expression

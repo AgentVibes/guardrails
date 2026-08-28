@@ -1,0 +1,29 @@
+# ── simple-components, rule 4 of 4 ─────────────────────────────────────
+#
+# The logic half of the two-tier split (decision D8, report §9): a screen picks
+# the models, matches the state and composes views. It carries no styling.
+#
+# Scoped to `**/*.screen.tsx` and nothing else, deliberately. The contract says
+# "logic components carry no styles", but there is no mechanical way to tell an
+# unmarked `.tsx` logic component from a plain one, and a blanket ban on
+# `className` would fire on every file of a Tailwind app. `*.screen.tsx` is the
+# one filename the convention makes explicit, so it is the one place the rule can
+# be right without a manifest.
+#
+# WARNING TIER: same reason as `view-file-logic` — D8 is recommendation-tier.
+id: screen-file-styling
+language: tsx
+severity: warning
+files:
+  - '**/*.screen.tsx'
+message: |
+  Styling on a screen. A screen's whole job is choosing models, matching state
+  and composing views; the moment it carries `className` or `style` it has taken
+  on a second job and starts growing the layout it should have delegated.
+  Move the markup into a `*.view.tsx` (or a shared UI primitive) and let the
+  screen pass it data.
+  See the simple-components skill (§two-tier) and report §9.
+rule:
+  all:
+    - kind: jsx_attribute
+    - regex: '^(className|style)='

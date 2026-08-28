@@ -1,0 +1,78 @@
+# ADOPTION NOTE (canon promotion): brownfield-heavy — ~48-105 whole-tree hits
+# per useStore-era repo (tg-gallery/observatory/ppa). Run it DIFF-SCOPED
+# (verify-diff / hook) until a repo's useStore migration campaign lands;
+# whole-tree `verify` output will be loud there by design, not by accident.
+# ── simple-components, rule 1 of 4 ─────────────────────────────────────
+#
+# Decision D1: a MobX project has NO store context. One module-level `rootStore`,
+# imported at screen level only; everything below gets models through props.
+#
+# The canon rule `direct-store-import` covers the other half — where a store
+# import is legal. Nothing in the canon bans the context CHANNEL itself, which is
+# what this rule is for. Audit basis (report §8): all four store-bearing apps
+# route through a `useStore()` context hook (215/97/69/46 call sites) and not one
+# of them uses it for anything context is needed for: in one of them the provider
+# hands out a module-level singleton unconditionally, and its own tests bypass
+# the provider entirely.
+#
+# NOT a candidate for blanket adoption in a repo that has not migrated: on
+# today's park this fires hundreds of times. Run it diff-scoped (the skill's
+# check-simple.sh --changed, or `guardrails verify-diff`) until the migration
+# lands.
+id: store-context-provider
+language: typescript
+severity: error
+ignores:
+  - '**/*.test.ts'
+  - '**/*.spec.ts'
+  - '**/__tests__/**'
+message: |
+  A store reached through React context. Decision D1: MobX already gives every
+  component a live channel to the data — a second one buys nothing and costs a
+  provider, a null-check and a hook on every file that reads state.
+  Do instead:
+    - one module-level `rootStore` in the canonical store module, imported
+      DIRECTLY and only by screen-level files;
+    - platform/DI dependencies through `initRootStore(deps)`, called once from
+      the entry file before the first render;
+    - page-scoped state through `usePageStore(() => new XxxPageStore(...), [k])`;
+    - everything below a screen receives `model={...}` as a prop.
+  Tests stop needing a provider at all: `new XxxStore(fakeDeps)` directly, and
+  `*.view.tsx` files mount with nothing around them.
+  See the simple-components skill (§store access) and report §8.
+rule:
+  any:
+    # `useStore()` — the call...
+    - all:
+        - kind: call_expression
+        - has:
+            field: function
+            kind: identifier
+            regex: '^useStore$'
+    # ...and its declaration, which is the thing that enables every call site.
+    - all:
+        - any:
+            - kind: function_declaration
+            - kind: variable_declarator
+        - has:
+            field: name
+            regex: '^useStore$'
+    # `createContext` whose declarator mentions a store.
+    - all:
+        - kind: call_expression
+        - has:
+            field: function
+            kind: identifier
+            regex: '^createContext$'
+        - inside:
+            stopBy: end
+            kind: variable_declarator
+            regex: '[Ss]tore'
+    # `useContext(SomethingStoreContext)`.
+    - all:
+        - kind: call_expression
+        - has:
+            field: function
+            kind: identifier
+            regex: '^useContext$'
+        - regex: '[Ss]tore'
