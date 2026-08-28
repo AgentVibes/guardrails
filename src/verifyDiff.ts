@@ -1,9 +1,11 @@
+import { join, relative } from "node:path";
 import { match } from "ts-pattern";
 import { scanFindings } from "./astGrep.js";
 import { type Finding, formatFinding } from "./findings.js";
 import { addedLines, changedFiles, gitRoot, resolveMergeBase } from "./gitDiff.js";
 import { rulesConfig } from "./packagePaths.js";
 import { structureFindings } from "./structure.js";
+import { readTomlTable } from "./tomlTable.js";
 
 // Added-lines ratchet, ported from defensive-errors check-diff.sh, with the
 // hook-postedit.sh fallback ladder instead of check-diff's "skip when no base".
@@ -30,6 +32,20 @@ interface Plan {
   files: string[] | undefined;
   /** undefined = gate every error finding; otherwise gate only listed lines/files. */
   keep: (f: Finding) => boolean;
+}
+
+/**
+ * `[verify] exclude = "<regex>"` in .agentvibes/project.toml — a VENDORED-tree
+ * carve-out, ported from merkle's check-diff.sh: a verbatim copy of somebody
+ * else's package must not be held to this repo's rules (editing it to satisfy
+ * them would turn the next upstream re-sync into a merge conflict and falsify
+ * the byte-identical provenance that is the reason to vendor). The regex tests
+ * the file path relative to the repo root.
+ */
+export function verifyExcludeRe(cwd: string): RegExp | undefined {
+  const raw = readTomlTable(join(cwd, ".agentvibes", "project.toml"), "verify").exclude;
+  if (raw === undefined || raw === "") return undefined;
+  return new RegExp(raw);
 }
 
 function resolveRung(cwd: string, base: string | undefined): Rung {
@@ -79,6 +95,12 @@ function planFor(rung: Rung): Plan {
 
 export function runVerifyDiff(base: string | undefined, json: boolean): number {
   const plan = planFor(resolveRung(process.cwd(), base));
+  const exclude = verifyExcludeRe(process.cwd());
+  if (exclude !== undefined && plan.files !== undefined) {
+    // changedFiles yields absolute paths; the exclude regex (donor precedent:
+    // '^packages/site-chrome/') is written against repo-root-relative ones.
+    plan.files = plan.files.filter((f) => !exclude.test(relative(process.cwd(), f)));
+  }
   const targets = plan.files ?? ["."];
 
   if (plan.files !== undefined && plan.files.length === 0) {

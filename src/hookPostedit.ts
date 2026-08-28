@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, relative } from "node:path";
 import { type Finding, formatFinding } from "./findings.js";
 import { addedLines, gitRoot, resolveMergeBase } from "./gitDiff.js";
 import { collectVerifyFindings } from "./verify.js";
+import { verifyExcludeRe } from "./verifyDiff.js";
 
 // Claude Code PostToolUse hook — port of defensive-errors hook-postedit.sh.
 // Reads the hook JSON on stdin; scans the just-edited TypeScript file; silent
@@ -82,6 +83,16 @@ export function runHookPostedit(): number {
   if (!file.endsWith(".ts") && !file.endsWith(".tsx")) return 0;
   // ast-grep-ignore: silent-default-return -- a hook fires on deletes/renames too; a vanished file has nothing to scan and hooks must never fail the edit (donor hook-postedit.sh line `[ -f "$FILE" ] || exit 0`)
   if (!existsSync(file)) return 0;
+
+  // Honour the repo's `[verify] exclude` carve-out (vendored trees) the same
+  // way verify-diff does — an edit inside a vendored copy is not gated.
+  const repoRoot = gitRoot(dirname(file));
+  if (
+    repoRoot !== undefined &&
+    verifyExcludeRe(repoRoot)?.test(relative(repoRoot, file)) === true
+  ) {
+    return 0;
+  }
 
   let findings: Finding[] = collectVerifyFindings([file]);
 

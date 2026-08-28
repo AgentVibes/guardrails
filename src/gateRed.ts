@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { packageRoot } from "./packagePaths.js";
@@ -29,6 +29,48 @@ function verify(target: string): number {
   return res.status ?? -1;
 }
 
+// The `[verify] exclude` vendored-tree carve-out, both directions: a bad file
+// INSIDE the excluded tree must not gate verify-diff, and the same bad file
+// outside it must — otherwise the carve-out would be indistinguishable from a
+// broken gate.
+function excludeCarveOut(base: string): number {
+  const repo = join(base, "excludeRepo");
+  mkdirSync(join(repo, "vendored"), { recursive: true });
+  mkdirSync(join(repo, ".agentvibes"), { recursive: true });
+  const git = (...args: string[]): void => {
+    const r = spawnSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+    if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
+  };
+  git("init", "-q");
+  writeFileSync(join(repo, ".agentvibes", "project.toml"), '[verify]\nexclude = "^vendored/"\n');
+  writeFileSync(join(repo, "clean.ts"), GOOD_SOURCE);
+  git("add", "-A");
+  git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init");
+
+  const run = (): number => {
+    const res = spawnSync("node", [join(packageRoot, "dist", "cli.js"), "verify-diff"], {
+      cwd: repo,
+      encoding: "utf8",
+    });
+    return res.status ?? -1;
+  };
+
+  writeFileSync(join(repo, "vendored", "upstreamCopy.ts"), BAD_SOURCE);
+  if (run() !== 0) {
+    console.error("FAIL gate-red: excluded vendored file gated verify-diff — carve-out inert");
+    return 1;
+  }
+  console.log("  ok  gate-red: bad file under [verify] exclude → verify-diff exit 0 (carve-out)");
+
+  writeFileSync(join(repo, "notVendored.ts"), BAD_SOURCE);
+  if (run() !== 1) {
+    console.error("FAIL gate-red: bad file OUTSIDE the exclude did not gate — exclude too broad");
+    return 1;
+  }
+  console.log("  ok  gate-red: same bad file outside the exclude → verify-diff exit 1");
+  return 0;
+}
+
 function main(): number {
   const dir = mkdtempSync(join(tmpdir(), "guardrails-gate-red-"));
   try {
@@ -51,7 +93,7 @@ function main(): number {
       return 1;
     }
     console.log("  ok  gate-red: clean file → verify exit 0 (gate goes green)");
-    return 0;
+    return excludeCarveOut(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
