@@ -1,0 +1,102 @@
+# ── the .tsx half of `state-loading-boolean-shape` ──
+#
+# ast-grep's `typescript` and `tsx` languages are DISJOINT: a `language:
+# typescript` rule reads .ts and never .tsx. `demo-mode-by-default-ts.yml`
+# records this repo learning that the hard way, so it is measured here rather
+# than assumed — 30 .tsx files in the park call make(Auto)Observable, and the
+# five twins with hits add 29 findings the .ts halves cannot see.
+#
+# Keep this file's `rule:` block IDENTICAL to `state-loading-boolean-shape.yml`.
+# Suppressing needs THIS id: `ast-grep-ignore: state-loading-boolean-shape-tsx`.
+#
+# ── wave 1, store rule 4 of 7 ──────────────────────────────────────────
+#
+# The boolean-soup async shape: `{ loading: boolean, data?: T, error?: E }`.
+# Four booleans' worth of states, of which most are nonsense — loading AND
+# error, loaded with no data, error with data — and nothing stops any of them
+# being constructed. It is the exact shape `Resource<T>` exists to replace.
+#
+# SCOPE, measured rather than guessed. The naive test — "a `loading: boolean`
+# field" — hits 71 sites park-wide, and most are legitimate: a `LoadMoreButton`
+# taking `loading?: boolean` as a prop is one boolean describing one thing, and
+# there is no invalid state to make unrepresentable. What makes the shape a
+# defect is that the async OUTCOME is recorded in more than one independently
+# settable place. So the rule requires a second field: another outcome boolean
+# (`isLoaded`, `isError`, `success`…), or a payload/error field that is optional
+# or null-unioned. A lone `loading?: boolean` stays silent, correctly.
+#
+# What that produces: 8 in `.ts` + 13 in `.tsx` = 21. The report's target of 114
+# is a DIFFERENT population — the migration target for `Resource<T>` adoption,
+# which also counts the 81 class fields spelled `loading = false` (a class
+# property, not a type declaration) plus hook-local boolean pairs. This rule is
+# scoped to type and interface declarations, so 21 is its honest number and the
+# remaining ~93 are not silently claimed.
+id: state-loading-boolean-shape-tsx
+language: tsx
+severity: error
+ignores:
+  - '**/*.test.tsx'
+  - '**/*.spec.tsx'
+  - '**/__tests__/**'
+utils:
+  bool-prop:
+    kind: property_signature
+    has:
+      stopBy: end
+      kind: predefined_type
+      regex: '^boolean$'
+  loading-flag:
+    all:
+      - matches: bool-prop
+      - has:
+          field: name
+          regex: '^(loading|isLoading|fetching|isFetching|busy|isBusy|pending|isPending)$'
+  # A SECOND place the same outcome is recorded. Deliberately excludes the
+  # loading family so a lone loading flag cannot satisfy both halves.
+  outcome-flag:
+    all:
+      - matches: bool-prop
+      - has:
+          field: name
+          regex: '^(loaded|isLoaded|error|isError|hasError|success|isSuccess|succeeded|failed|isFailed|done|isDone|ready|isReady)$'
+  # A payload or error that may or may not be there — the other way the shape
+  # admits "loaded but empty" and "errored but full".
+  payload-field:
+    kind: property_signature
+    all:
+      - has:
+          field: name
+          regex: '^(data|error|value|result|items|response|payload)$'
+      - any:
+          - regex: '\?\s*:'
+          - has:
+              stopBy: end
+              kind: union_type
+              regex: '(null|undefined)'
+message: |
+  An async state recorded as a boolean plus optional payload. The type admits
+  states that cannot happen — loading with an error, done with no data, an
+  error carrying data — so every reader has to re-derive which combination is
+  real, and they disagree.
+  Use a discriminated union, where the payload lives in the branch that has it:
+    { loading: boolean; data?: T; error?: string }
+    → | { status: "idle" }
+      | { status: "loading" }
+      | { status: "ready"; data: T }
+      | { status: "error"; message: string }
+  Then `match(state).with({ status: "ready" }, ({ data }) => …).exhaustive()`
+  makes adding a state a build error instead of a silent fallthrough.
+  For fetch-shaped data prefer the shared Query/`Resource<T>` rather than
+  hand-rolling the union again. See defensive-errors Rule 1 and the
+  mobx-models skill.
+rule:
+  all:
+    - any:
+        - kind: interface_body
+        - kind: object_type
+    - has:
+        matches: loading-flag
+    - has:
+        any:
+          - matches: outcome-flag
+          - matches: payload-field

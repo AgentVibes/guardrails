@@ -1,0 +1,93 @@
+# ── wave 1, store rule 5 of 7 ──────────────────────────────────────────
+#
+# A getter whose entire body is `return this.someStore.prop` — a store aliasing
+# another store's field. It adds a second name for one piece of state, so call
+# sites disagree about which name is canonical, and the alias silently outlives
+# the field it forwards to.
+#
+# THE NEGATIVE IS THE WHOLE DESIGN OF THIS RULE. The identical shape,
+# `return this.data.x`, is the house data-wrapper pattern and is completely
+# legal: a `Model` class holding a plain record and exposing its fields as
+# observable getters. Measured across SiteCraft, observatory, byok and metro,
+# single-line `return this.X.y` getters break down as:
+#
+#     89 × this.data.*            byok Model, metro domain stores — LEGAL
+#      2 × this.connectionStore.* — the real store→store alias
+#
+# So the discriminator is the intermediate NAME, and the rule matches only
+# `Store`-suffixed ones — the same `[Ss]tore` convention mobx-effect-observable-dep
+# and mobx-usestate-from-store already key on.
+#
+# KNOWN AND DELIBERATE MISS: a rootStore reference conventionally named `root`
+# (WireDrill annotates `{ root: false }`), so `return this.root.user` is a real
+# store→store alias this rule does not catch. Widening to `root` would put
+# `this.data`-shaped names back in scope by degrees; the good fixture pins the
+# miss so it stays a decision rather than becoming a surprise.
+id: store-delegation-getter
+language: typescript
+severity: warning
+ignores:
+  - '**/*.test.ts'
+  - '**/*.spec.ts'
+  - '**/__tests__/**'
+utils:
+  store-class:
+    kind: class_declaration
+    has:
+      stopBy: end
+      kind: call_expression
+      has:
+        field: function
+        kind: identifier
+        regex: '^make(Auto)?Observable$'
+message: |
+  A getter that only forwards another store's field. Now the value has two
+  names, and every call site has to know which one is current — the alias keeps
+  compiling long after the field behind it moves or changes meaning.
+  Read it where it lives (`rootStore.userStore.name`), or, if this store really
+  owns the concept, hold the value rather than a pointer to someone else's.
+  A computed that DERIVES something (combines, filters, formats) is the point of
+  computeds and is not this — this fires only on a body that is a bare
+  `return this.otherStore.field`.
+  Not this rule: `return this.data.x` on a model wrapping a plain record. That
+  is the sanctioned data-wrapper pattern and stays silent.
+  See the mobx-models skill.
+rule:
+  all:
+    - kind: method_definition
+    - regex: '^((private|public|protected|static|override)\s+)*get\s'
+    - inside:
+        stopBy: end
+        matches: store-class
+    - has:
+        field: body
+        all:
+          - kind: statement_block
+          - has:
+              kind: return_statement
+              has:
+                kind: member_expression
+                has:
+                  field: object
+                  all:
+                    - kind: member_expression
+                    - has:
+                        field: object
+                        kind: this
+                    - has:
+                        field: property
+                        regex: '[Ss]tore$'
+          # Body is ONLY that return — anything computed on the way makes it a
+          # real derivation rather than an alias.
+          - not:
+              has:
+                any:
+                  - kind: if_statement
+                  - kind: lexical_declaration
+                  - kind: variable_declaration
+                  - kind: expression_statement
+                  - kind: for_statement
+                  - kind: for_in_statement
+                  - kind: while_statement
+                  - kind: switch_statement
+                  - kind: try_statement

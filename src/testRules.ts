@@ -51,6 +51,94 @@ const EXPECTATIONS: Expectation[] = [
     hits: 5,
     goodSuffix: "ui-imports-app-store/src/ui/good.tsx",
   },
+  // wave 1: store rules. `typescript` and `tsx` are disjoint languages in
+  // ast-grep, so each twin is its own rule id and needs its own executed
+  // assertion — an unasserted twin is exactly the unexecuted rule the iron
+  // rule forbids.
+  {
+    rule: "store-no-runinaction",
+    badSuffix: "store-no-runinaction/bad.ts",
+    hits: 5,
+    goodSuffix: "store-no-runinaction/good.ts",
+  },
+  {
+    rule: "store-async-method",
+    badSuffix: "store-async-method/bad.ts",
+    hits: 4,
+    goodSuffix: "store-async-method/good.ts",
+  },
+  {
+    rule: "store-new-map",
+    badSuffix: "store-new-map/bad.ts",
+    hits: 4,
+    goodSuffix: "store-new-map/good.ts",
+  },
+  {
+    rule: "state-loading-boolean-shape",
+    badSuffix: "state-loading-boolean-shape/bad.ts",
+    hits: 5,
+    goodSuffix: "state-loading-boolean-shape/good.ts",
+  },
+  {
+    rule: "store-delegation-getter",
+    badSuffix: "store-delegation-getter/bad.ts",
+    hits: 4,
+    goodSuffix: "store-delegation-getter/good.ts",
+  },
+  {
+    rule: "no-local-kit-clone",
+    badSuffix: "no-local-kit-clone/bad.ts",
+    hits: 6,
+    goodSuffix: "no-local-kit-clone/good.ts",
+  },
+  {
+    rule: "store-no-setinterval-poll",
+    badSuffix: "store-no-setinterval-poll/bad.ts",
+    hits: 2,
+    goodSuffix: "store-no-setinterval-poll/good.ts",
+  },
+  {
+    rule: "store-no-runinaction-tsx",
+    badSuffix: "store-no-runinaction/bad.tsx",
+    hits: 5,
+    goodSuffix: "store-no-runinaction/good.tsx",
+  },
+  {
+    rule: "store-async-method-tsx",
+    badSuffix: "store-async-method/bad.tsx",
+    hits: 4,
+    goodSuffix: "store-async-method/good.tsx",
+  },
+  {
+    rule: "store-new-map-tsx",
+    badSuffix: "store-new-map/bad.tsx",
+    hits: 4,
+    goodSuffix: "store-new-map/good.tsx",
+  },
+  {
+    rule: "state-loading-boolean-shape-tsx",
+    badSuffix: "state-loading-boolean-shape/bad.tsx",
+    hits: 5,
+    goodSuffix: "state-loading-boolean-shape/good.tsx",
+  },
+  {
+    rule: "store-delegation-getter-tsx",
+    badSuffix: "store-delegation-getter/bad.tsx",
+    hits: 4,
+    goodSuffix: "store-delegation-getter/good.tsx",
+  },
+  {
+    rule: "no-local-kit-clone-tsx",
+    badSuffix: "no-local-kit-clone/bad.tsx",
+    hits: 6,
+    goodSuffix: "no-local-kit-clone/good.tsx",
+  },
+  {
+    rule: "store-no-setinterval-poll-tsx",
+    badSuffix: "store-no-setinterval-poll/bad.tsx",
+    hits: 2,
+    goodSuffix: "store-no-setinterval-poll/good.tsx",
+  },
 ];
 
 // A file that is deliberately out of scope — same offending code as the bad

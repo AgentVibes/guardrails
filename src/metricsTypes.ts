@@ -42,15 +42,21 @@ export interface FileMetrics {
 }
 
 export interface StoreMetrics {
-  /** runInAction( call sites, anywhere (banned outright) */
+  /** canon rule store-no-runinaction(+tsx): runInAction in make(Auto)Observable classes */
   runInActionCount: number;
-  /** async methods declared in classes named *Store (should be flow()) */
+  /** canon rule store-async-method(+tsx): async store methods that should be flow() */
   asyncInStore: number;
-  /** `new Map(` inside classes named *Store (should be observable.map) */
+  /** canon rule store-new-map(+tsx): plain-Map store fields that should be observable.map */
   newMapInStore: number;
-  /** reaction( + autorun( call sites — the ~3-per-app budget */
+  /** reaction( + autorun( call sites — the ~3-per-app budget; direct AST count (no rule yet) */
   reactionsTotal: number;
-  /** `loading: boolean` property signatures/declarations — the bool-shape antipattern */
+  /**
+   * Boolean-shaped async-progress DECLARATIONS (`loading: boolean`,
+   * `uploading = false`) — direct AST count, intentionally NOT the
+   * state-loading-boolean-shape rule: the rule fires only on type-level shapes
+   * with a second outcome/payload field, while this metric also counts the
+   * lone class-field flags that are Resource<T>'s migration target.
+   */
   loadingBooleanShapes: number;
 }
 

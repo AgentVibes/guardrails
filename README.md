@@ -40,6 +40,21 @@ inline-map-row count, p90 context-cost, runInAction count, async-in-store,
 new-Map-in-store, reactions total, loading-boolean shapes. Everything else is
 observe-only.
 
+Counter provenance: runInAction / async-in-store / new-Map-in-store /
+inline-map-row are finding counts of the canon rules (`store-no-runinaction`,
+`store-async-method`, `store-new-map`, `inline-map-row` + tsx twins) — the
+metric counts exactly what `verify` gates. Note the rules' scoping:
+"store" means a class calling `make(Auto)Observable` (not a name/path
+heuristic), and `async_in_store` counts only async methods that mutate `this`
+WITHOUT a `runInAction` patch — the patched ones are already in
+`runInAction_count`, so the two counters partition the should-be-`flow()`
+population without double counting. `reactions_total` is a direct AST
+count (no rule yet). `loading_boolean_shapes` is deliberately NOT the
+`state-loading-boolean-shape` rule: the rule fires only on type-level shapes
+where the outcome is recorded twice (loading flag + second outcome/payload
+field), while the metric also counts lone boolean progress-flag declarations
+(`loading = false` class fields) — the wider Resource<T> migration target.
+
 ## Presets
 
 ```jsonc

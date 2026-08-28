@@ -1,0 +1,108 @@
+# ── the .tsx half of `store-async-method` ──
+#
+# ast-grep's `typescript` and `tsx` languages are DISJOINT: a `language:
+# typescript` rule reads .ts and never .tsx. `demo-mode-by-default-ts.yml`
+# records this repo learning that the hard way, so it is measured here rather
+# than assumed — 30 .tsx files in the park call make(Auto)Observable.
+#
+# Keep this file's `rule:` block IDENTICAL to `store-async-method.yml`.
+# Suppressing needs THIS id: `ast-grep-ignore: store-async-method-tsx`.
+#
+# ── wave 1, store rule 2 of 7 ──────────────────────────────────────────
+#
+# The other half of `store-no-runinaction`, and the reason that rule has so much
+# to find: an `async` method's continuation after each `await` is NOT covered by
+# the action `makeAutoObservable` created. Every assignment past the first await
+# is an unbatched mutation outside an action.
+#
+# Deliberately does NOT fire when the method already contains `runInAction` —
+# that method is reported by `store-no-runinaction` at `error`, and the fix is
+# the same conversion. Two findings prescribing one change read as two problems,
+# and the error-tier one is the one worth showing.
+#
+# So this rule catches the quieter half: the async store method that mutates
+# without even the hand-patched `runInAction`, where nothing marks the hole.
+id: store-async-method-tsx
+language: tsx
+severity: warning
+ignores:
+  - '**/*.test.tsx'
+  - '**/*.spec.tsx'
+  - '**/__tests__/**'
+utils:
+  store-class:
+    kind: class_declaration
+    has:
+      stopBy: end
+      kind: call_expression
+      has:
+        field: function
+        kind: identifier
+        regex: '^make(Auto)?Observable$'
+  contains-runinaction:
+    has:
+      stopBy: end
+      kind: call_expression
+      has:
+        field: function
+        kind: identifier
+        regex: '^runInAction$'
+  # An observable MUTATION — which is the whole defect. Without this clause the
+  # rule fires on any async method, and in SiteCraft 10 of its 12 hits were
+  # private I/O helpers (`walkDir`, `collectAllFiles`, `uploadFile`) that await
+  # a filesystem and never touch a field. Those have no action coverage to lose,
+  # so at warning tier they were pure noise.
+  mutates-this:
+    has:
+      stopBy: end
+      any:
+        # this.field = … / this.field += …
+        - all:
+            - any:
+                - kind: assignment_expression
+                - kind: augmented_assignment_expression
+            - has:
+                field: left
+                kind: member_expression
+                has:
+                  field: object
+                  kind: this
+        # this.list.push(…), this.map.set(…), … — mutation through a method.
+        - all:
+            - kind: call_expression
+            - has:
+                field: function
+                kind: member_expression
+                all:
+                  - has:
+                      field: property
+                      regex: '^(push|pop|shift|unshift|splice|sort|reverse|set|delete|clear|add)$'
+                  - has:
+                      field: object
+                      kind: member_expression
+                      has:
+                        field: object
+                        kind: this
+message: |
+  An `async` method on a store class. The action that `makeAutoObservable`
+  wrapped around it ends at the first `await` — everything after resumes
+  OUTSIDE it, so each assignment there is an unbatched mutation and observers
+  see the half-updated store between them.
+  Use a `flow`, which resumes inside an action at every yield:
+    async load() { this.x = await f(); this.y = await g() }
+    → load = flow(function* (this: Store) { this.x = yield f(); this.y = yield g() })
+  Scope: this fires only when the method actually MUTATES an observable —
+  assigns `this.field` or calls `push`/`set`/`delete` on one. A private async
+  helper that only does I/O and returns has no action coverage to lose and stays
+  silent.
+  See the mobx-models skill.
+rule:
+  all:
+    - kind: method_definition
+    - regex: '^((private|public|protected|static|override|abstract)\s+)*async\s'
+    - inside:
+        stopBy: end
+        matches: store-class
+    - matches: mutates-this
+    - not:
+        matches: contains-runinaction

@@ -1,0 +1,93 @@
+# ── wave 1, store rule 6 of 7 ──────────────────────────────────────────
+#
+# Report §13 step 1: the same handful of primitives is redeclared in repo after
+# repo — 7 local `Resource<T>` unions, 6 copies of `diagnostics.ts` inside a
+# single monorepo, a `usePageStore` improvised on `useMemo` with no dispose.
+# They drift: the discriminator alone is spelled `kind` in three repos, `status`
+# in two and `state` in one, so the "same" type does not typecheck against
+# itself across a boundary.
+#
+# TWO CARVE-OUTS, both deliberate, because an error-tier rule that fires on the
+# canonical definition is worse than no rule:
+#
+#  1. The kit package itself. `@agentvibes/kit` DOES NOT EXIST YET — the glob
+#     below currently guards a path with nothing behind it, and is here so the
+#     package can be created without immediately tripping its own rule. Until it
+#     is published, this rule names a destination that cannot yet be imported;
+#     that is the honest state of it, and the reason it is worth having anyway
+#     is to stop the count of copies growing while the package is built.
+#  2. `packages/observable-query/` in Retouch4Me — the reference implementation
+#     being promoted INTO the kit (§14). Telling it to import itself would be
+#     nonsense.
+#
+# `Resource` must carry type parameters to match. Without that the rule hits
+# `interface Resource { name; url; type; description }` in VolumePhotography — a
+# page listing conference links, nothing to do with async state.
+id: no-local-kit-clone
+language: typescript
+severity: error
+ignores:
+  - '**/node_modules/**'
+  - '**/packages/kit/**'
+  - '**/agentvibes-kit/**'
+  - '**/packages/observable-query/**'
+  - '**/*.test.ts'
+  - '**/*.spec.ts'
+  - '**/__tests__/**'
+message: |
+  A local redeclaration of a primitive that belongs to the shared kit. Every
+  copy drifts — across this codebase the same async union is discriminated by
+  `kind` in three repos, `status` in two and `state` in one, so the "same" type
+  will not typecheck against itself across a package boundary, and a fix to one
+  copy reaches none of the others.
+  Import it instead:
+    Resource<T> / QueryState<T>           → @agentvibes/kit/resource
+    usePageStore, QueryView, ShowWhen     → @agentvibes/kit/react
+    warnDegraded, warnNotImplemented      → @agentvibes/kit/diagnostics
+  If this IS the canonical definition — the kit package, or the implementation
+  being promoted into it — it belongs behind the path carve-outs at the top of
+  this rule rather than behind a suppression comment.
+  NOTE: `@agentvibes/kit` is not published yet, so today this rule freezes the
+  number of copies rather than offering an import you can actually write. Until
+  it ships, editing the declaration line of an existing copy needs a suppression
+  with a reason — the rule is here to stop copy number eight, not to claim the
+  migration is available.
+rule:
+  any:
+    # type Resource<T> = … / type QueryState<T> = …
+    - all:
+        - kind: type_alias_declaration
+        - has:
+            field: name
+            regex: '^(Resource|QueryResource|QueryState)$'
+        # Type parameters required: an unrelated domain `interface Resource`
+        # naming a link or a document is not this.
+        - has:
+            field: type_parameters
+            kind: type_parameters
+    # class Resource<T> / class ObservableQuery<T>
+    - all:
+        - kind: class_declaration
+        - has:
+            field: name
+            regex: '^(Resource|ObservableQuery|QueryResource)$'
+        - has:
+            field: type_parameters
+            kind: type_parameters
+    # function warnDegraded(…) / function usePageStore(…)
+    - all:
+        - kind: function_declaration
+        - has:
+            field: name
+            regex: '^(warnDegraded|warnNotImplemented|usePageStore|resetDiagnostics)$'
+    # const usePageStore = (…) => … / const warnDegraded = function (…) …
+    - all:
+        - kind: variable_declarator
+        - has:
+            field: name
+            regex: '^(warnDegraded|warnNotImplemented|usePageStore|resetDiagnostics)$'
+        - has:
+            field: value
+            any:
+              - kind: arrow_function
+              - kind: function_expression

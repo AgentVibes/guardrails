@@ -1,0 +1,84 @@
+# ── the .tsx half of `store-new-map` ──
+#
+# ast-grep's `typescript` and `tsx` languages are DISJOINT: a `language:
+# typescript` rule reads .ts and never .tsx. `demo-mode-by-default-ts.yml`
+# records this repo learning that the hard way, so it is measured here rather
+# than assumed — 30 .tsx files in the park call make(Auto)Observable, and the
+# five twins with hits add 29 findings the .ts halves cannot see.
+#
+# Keep this file's `rule:` block IDENTICAL to `store-new-map.yml`.
+# Suppressing needs THIS id: `ast-grep-ignore: store-new-map-tsx`.
+#
+# ── wave 1, store rule 3 of 7 ──────────────────────────────────────────
+#
+# A plain `new Map()` held as a store field. `makeAutoObservable` makes the FIELD
+# observable — reassigning it notifies — but not the map's contents: `.set()`
+# and `.delete()` mutate in place and no observer wakes up. The usual symptom is
+# a cache that updates and a UI that does not, "fixed" by reassigning a fresh
+# Map on every write.
+#
+# The negative that matters is the legal one, and it is why this rule reads the
+# annotation object rather than just the initializer: a field explicitly
+# annotated `{ _cache: false }` is deliberately NOT observable — a private
+# memo/dedup cache nothing renders from. That is a correct pattern and must stay
+# silent. A shared `$FIELD` metavariable ties the field's name to the annotation
+# entry, so the check is per-field rather than per-class.
+id: store-new-map-tsx
+language: tsx
+severity: warning
+ignores:
+  - '**/*.test.tsx'
+  - '**/*.spec.tsx'
+  - '**/__tests__/**'
+utils:
+  store-class:
+    kind: class_declaration
+    has:
+      stopBy: end
+      kind: call_expression
+      has:
+        field: function
+        kind: identifier
+        regex: '^make(Auto)?Observable$'
+message: |
+  A plain `Map` as an observable store field. The field reference is
+  observable; the map's CONTENTS are not — `.set()` and `.delete()` mutate in
+  place and notify nobody, so anything rendering from this map silently stops
+  updating.
+  Use `observable.map()`, whose mutations are tracked:
+    entries = new Map<string, Row>()  →  entries = observable.map<string, Row>()
+  If this is a private cache nothing renders from, say so in the annotation and
+  the rule steps aside:
+    makeAutoObservable(this, { _cache: false })
+  See the mobx-models skill.
+rule:
+  all:
+    - kind: public_field_definition
+    - has:
+        field: name
+        pattern: $FIELD
+    - has:
+        field: value
+        kind: new_expression
+        has:
+          field: constructor
+          kind: identifier
+          regex: '^Map$'
+    - inside:
+        stopBy: end
+        matches: store-class
+    # Annotated non-observable for this exact field name — the legal escape.
+    - not:
+        inside:
+          stopBy: end
+          kind: class_declaration
+          has:
+            stopBy: end
+            all:
+              - kind: pair
+              - has:
+                  field: key
+                  pattern: $FIELD
+              - has:
+                  field: value
+                  regex: '^false$'

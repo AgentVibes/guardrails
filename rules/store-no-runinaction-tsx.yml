@@ -1,0 +1,71 @@
+# ── the .tsx half of `store-no-runinaction` ──
+#
+# ast-grep's `typescript` and `tsx` languages are DISJOINT: a `language:
+# typescript` rule reads .ts and never .tsx. `demo-mode-by-default-ts.yml`
+# records this repo learning that the hard way, so it is measured here rather
+# than assumed — 30 .tsx files in the park call make(Auto)Observable, and the
+# five twins with hits add 29 findings the .ts halves cannot see.
+#
+# Keep this file's `rule:` block IDENTICAL to `store-no-runinaction.yml`.
+# Suppressing needs THIS id: `ast-grep-ignore: store-no-runinaction-tsx`.
+#
+# ── wave 1, store rule 1 of 7 ──────────────────────────────────────────
+#
+# The report's gap number 1: the most-repeated store rule in the corpus had no
+# mechanical check at all, and the one script that did grep for it
+# (mobx-models/scripts/lint-mobx.sh) was wired to nothing and has since been
+# deleted.
+#
+# Scoped by the CLASS, not by the path. `**/stores/**` would have been the
+# obvious glob and it is the wrong one twice over: it misses a store that lives
+# beside its feature, and it catches plain helper classes that happen to sit in
+# the folder. "Has a make(Auto)Observable call in it" is the actual definition
+# of the thing the rule is about.
+#
+# Note the callee is matched as an identifier rather than with
+# `pattern: makeAutoObservable($$$)`. A pattern does not match a call carrying
+# explicit type arguments, and SiteCraft writes
+# `makeAutoObservable<this, '_buildTimer' | 'buildManager'>(this, {…})` — which
+# silently cost the whole of project.store.ts, 7 real call sites, until the
+# count came up short against the grep.
+id: store-no-runinaction-tsx
+language: tsx
+severity: error
+ignores:
+  # A test may drive a store's state directly to set up a scenario; that is the
+  # sanctioned way to test a store without a render. All 6 of tg-gallery's
+  # runInAction sites are tests, which is why the report counts it as 0.
+  - '**/*.test.tsx'
+  - '**/*.spec.tsx'
+  - '**/__tests__/**'
+utils:
+  store-class:
+    kind: class_declaration
+    has:
+      stopBy: end
+      kind: call_expression
+      has:
+        field: function
+        kind: identifier
+        regex: '^make(Auto)?Observable$'
+message: |
+  `runInAction` inside a store class. Every method is already an action —
+  `makeAutoObservable` made it one — so this wraps an action in an action and
+  buys nothing. Where it appears is the tell: after an `await`, because the
+  continuation of an async method is NOT covered by the method's action, and
+  each `runInAction` is a hand-patched hole in that coverage.
+  Convert the method to a `flow`, which resumes inside an action at every yield
+  and needs no patching:
+    async load() { const x = await f(); runInAction(() => { this.x = x }) }
+    → load = flow(function* (this: Store) { this.x = yield f() })
+  See the mobx-models skill.
+rule:
+  all:
+    - kind: call_expression
+    - has:
+        field: function
+        kind: identifier
+        regex: '^runInAction$'
+    - inside:
+        stopBy: end
+        matches: store-class

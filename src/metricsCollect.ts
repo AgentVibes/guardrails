@@ -176,33 +176,17 @@ function importLineSet(sf: ts.SourceFile): Set<number> {
   return lines;
 }
 
+// runInAction / async-method / new-Map counters moved to the canon rule ids
+// (store-no-runinaction, store-async-method, store-new-map) — see
+// collectMetrics. Only what no rule covers yet stays as a direct AST count.
 function collectStoreMetrics(sf: ts.SourceFile, store: StoreMetrics): void {
-  const visit = (node: ts.Node, inStoreClass: boolean): void => {
-    let inStore = inStoreClass;
-    if (ts.isClassDeclaration(node) || ts.isClassExpression(node)) {
-      inStore = node.name !== undefined && /Store$/.test(node.name.text);
-    }
+  const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
       const name = calleeName(node);
-      if (name === "runInAction") store.runInActionCount += 1;
+      // No canon rule counts reactions yet — direct AST count until one lands.
       if ((name === "reaction" || name === "autorun") && ts.isIdentifier(node.expression)) {
         store.reactionsTotal += 1;
       }
-    }
-    if (
-      inStore &&
-      ts.isMethodDeclaration(node) &&
-      node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) === true
-    ) {
-      store.asyncInStore += 1;
-    }
-    if (
-      inStore &&
-      ts.isNewExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === "Map"
-    ) {
-      store.newMapInStore += 1;
     }
     // A boolean-shaped async-progress DECLARATION (`loading: boolean`,
     // `uploading = false`) — the §14 antipattern Resource<T>/QueryState
@@ -222,9 +206,9 @@ function collectStoreMetrics(sf: ts.SourceFile, store: StoreMetrics): void {
     ) {
       store.loadingBooleanShapes += 1;
     }
-    node.forEachChild((child) => visit(child, inStore));
+    node.forEachChild(visit);
   };
-  visit(sf, false);
+  visit(sf);
 }
 
 export function collectMetrics(targets: string[]): CollectedMetrics {
@@ -244,16 +228,21 @@ export function collectMetrics(targets: string[]): CollectedMetrics {
     declsByFile.set(d.file, list);
   }
 
-  const inlineMapRowCount = scan(rulesConfig, targets).filter(
-    (r) => r.ruleId === "inline-map-row" && !EXCLUDED_FILE.test(r.file),
-  ).length;
+  // One scan of the full rule canon feeds every rule-backed counter. The store
+  // counters use the canon rules' definition of "a store" (a class calling
+  // make(Auto)Observable) rather than a name or path heuristic — the metric
+  // counts exactly what verify gates.
+  const ruleRows = scan(rulesConfig, targets).filter((r) => !EXCLUDED_FILE.test(r.file));
+  const ruleCount = (...ids: string[]): number =>
+    ruleRows.filter((r) => ids.includes(r.ruleId)).length;
+  const inlineMapRowCount = ruleCount("inline-map-row");
 
   const components: ComponentMetrics[] = [];
   const files: FileMetrics[] = [];
   const store: StoreMetrics = {
-    runInActionCount: 0,
-    asyncInStore: 0,
-    newMapInStore: 0,
+    runInActionCount: ruleCount("store-no-runinaction", "store-no-runinaction-tsx"),
+    asyncInStore: ruleCount("store-async-method", "store-async-method-tsx"),
+    newMapInStore: ruleCount("store-new-map", "store-new-map-tsx"),
     reactionsTotal: 0,
     loadingBooleanShapes: 0,
   };

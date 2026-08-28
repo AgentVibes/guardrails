@@ -1,0 +1,51 @@
+# ── wave 1, store rule 7 of 7 ──────────────────────────────────────────
+#
+# `setInterval` inside a store class: a hand-rolled poll. Report §14 counts three
+# independent sites rebuilding the same thing, and the failure mode is uniform —
+# the interval outlives what it was polling for, keeps firing while the tab is
+# hidden, and its disposer is either missing or forgotten (ObservableQuery, the
+# reference implementation, shipped with exactly that leak: `dispose()` not
+# removing its `visibilitychange` listener).
+#
+# Matches the CALL, not the identifier, so the common
+# `private timer: ReturnType<typeof setInterval>` field annotation — a type
+# position — stays silent.
+id: store-no-setinterval-poll
+language: typescript
+severity: warning
+ignores:
+  - '**/*.test.ts'
+  - '**/*.spec.ts'
+  - '**/__tests__/**'
+utils:
+  store-class:
+    kind: class_declaration
+    has:
+      stopBy: end
+      kind: call_expression
+      has:
+        field: function
+        kind: identifier
+        regex: '^make(Auto)?Observable$'
+message: |
+  A hand-rolled poll inside a store. An interval has to be cancelled on every
+  path that ends the thing it polls for, paused when the tab is hidden, and kept
+  from overlapping a request still in flight — and the copies in this codebase
+  each solve a different two of those three.
+  Use the Query object's `refetchInterval`, which owns the disposer, the
+  in-flight dedup and the focus/visibility handling in one place.
+  CARVE-OUT — process-shaped work (a render, an export, a git sync: something
+  with progress and no notion of revalidation) legitimately ticks on a timer.
+  There is no manifest glob for that yet, so mark those with a reason:
+    // ast-grep-ignore: store-no-setinterval-poll -- progress tick for a render job
+  See report §14 and the mobx-models skill.
+rule:
+  all:
+    - kind: call_expression
+    - has:
+        field: function
+        kind: identifier
+        regex: '^setInterval$'
+    - inside:
+        stopBy: end
+        matches: store-class
