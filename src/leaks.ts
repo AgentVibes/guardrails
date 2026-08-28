@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { LEAK_PATTERNS, type LeakPattern } from "./leakPatterns.js";
 import { loadPlugin, resolvePluginName } from "./pluginResolve.js";
@@ -16,7 +16,16 @@ import { tryResolveTool } from "./toolResolve.js";
 // Exit 1 on any hit; exit 2 on an unloadable pattern (a gate that silently
 // drops a bad pattern is a coverage hole nobody can see).
 
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git", "coverage", ".turbo", "build", ".next"]);
+const SKIP_DIRS = new Set([
+  "node_modules",
+  "dist",
+  ".git",
+  "coverage",
+  ".turbo",
+  "build",
+  ".next",
+  ".claude",
+]);
 
 export interface LeakFinding {
   file: string;
@@ -104,10 +113,12 @@ function isTextFile(buf: Buffer): boolean {
   return !buf.subarray(0, 8192).includes(0);
 }
 
+// lstat, never following symlinks: a symlinked foreign tree is not this
+// repo's content (fileWalk.ts records the incident that taught this).
 function walk(path: string, out: string[], exemptFiles: Set<string>): void {
-  let st: ReturnType<typeof statSync>;
+  let st: ReturnType<typeof lstatSync>;
   try {
-    st = statSync(path);
+    st = lstatSync(path);
   } catch {
     return;
   }
