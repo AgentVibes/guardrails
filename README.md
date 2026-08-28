@@ -16,6 +16,13 @@ Tools (ast-grep, biome) are not npm dependencies: the CLI resolves them from
 PATH, falls back to `mise x <tool>@<pin>` using the pins in this package's
 `mise.toml`, and prints a one-line install hint when neither works.
 
+Installing straight from git (`github:AgentVibes/guardrails#<sha>`) works —
+the `prepare` script builds `dist/` at install time — but pnpm blocks
+lifecycle scripts of git-hosted deps by default: add an `allowBuilds` entry
+for the exact resolved spec to the consuming repo's `pnpm-workspace.yaml`
+(`"@agentvibes/guardrails@github:AgentVibes/guardrails#<sha>": true`), or
+install from the registry once the package is published.
+
 ## Commands
 
 All subcommands accept `--json`.
