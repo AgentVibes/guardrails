@@ -1,0 +1,13 @@
+id: r8-inline-style-prop
+language: tsx
+severity: hint
+message: |
+  R8 — Inline style={{}} prop. Prefer NativeWind className for static
+  values (color, spacing, layout, radius). Reserve style={{}} for
+  genuinely dynamic values: animated transforms, computed widths/positions.
+  See <vault>/_agent/Notes/2026-05-03-code-quality-rules.md R8.
+files:
+  - "apps/ppa/components/**/*.tsx"
+rule:
+  kind: jsx_attribute
+  regex: '^style=\{\{'

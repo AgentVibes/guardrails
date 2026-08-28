@@ -1,0 +1,13 @@
+id: r1a-hardcoded-url-in-component
+language: tsx
+severity: warning
+message: |
+  R1a — Hardcoded URL in component file. Move to apps/ppa/lib/constants/urls.ts
+  (or per-package equivalent), expose via a named export, and read it from a store computed.
+  See <vault>/_agent/Notes/2026-05-03-code-quality-rules.md R1.
+files:
+  - "apps/ppa/components/**/*.tsx"
+  - "apps/ppa/components/**/*.ts"
+rule:
+  kind: string
+  regex: '"https?://'

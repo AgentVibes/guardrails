@@ -1,0 +1,13 @@
+id: catch-empty
+language: typescript
+severity: error
+message: |
+  Empty catch silently swallows errors. Either handle specifically OR log + rethrow OR
+  return an explicit discriminated failure variant.
+  See defensive-errors Rule 8.
+rule:
+  any:
+    - pattern: |
+        try { $$$ } catch { }
+    - pattern: |
+        try { $$$ } catch ($_) { }

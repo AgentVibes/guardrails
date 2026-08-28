@@ -1,0 +1,15 @@
+id: match-bool-to-null
+language: tsx
+severity: warning
+message: |
+  `match(cond).with(true, ...).with(false, () => null).exhaustive()` is the
+  ceremonial form of "maybe render this subtree". Use the purpose-built helper:
+    <ShowWhen cond={cond}>{() => <JSX/>}</ShowWhen>
+  ShowWhen is an observer (MobX-reactive), lazily evaluates children, and
+  communicates intent. If BOTH arms render something non-null, keep match().
+rule:
+  pattern: |
+    match($COND)
+      .with(true, () => $$$A)
+      .with(false, () => null)
+      .exhaustive()

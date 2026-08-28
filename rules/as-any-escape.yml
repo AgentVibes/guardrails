@@ -1,0 +1,11 @@
+id: as-any-escape
+language: typescript
+severity: error
+message: |
+  `as any` / `as unknown as` hides real type bugs that surface as runtime crashes.
+  Fix the type at the source (Zod schema, interface), use a type guard, or .parse() at the boundary.
+  See defensive-errors Rule 7.
+rule:
+  any:
+    - pattern: "$X as any"
+    - pattern: "$X as unknown as $_"

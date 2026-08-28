@@ -1,0 +1,8 @@
+# ast-grep config for the @agentvibes/guardrails rule canon.
+# Invoke directly: ast-grep scan -c <abs path to this file> <target>
+# Or via the CLI:  guardrails verify [paths]
+#
+# candidates/ is deliberately NOT listed: those rules are un-triaged imports
+# (see candidates/README.md) and load nowhere until promoted into rules/.
+ruleDirs:
+  - rules

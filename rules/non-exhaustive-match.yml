@@ -1,0 +1,9 @@
+id: non-exhaustive-match
+language: typescript
+severity: warning
+message: |
+  `.otherwise()` catches unmatched variants silently. Prefer `.exhaustive()` so adding a
+  new union variant becomes a compile error everywhere it's branched on.
+  See defensive-errors Rule 2 and pattern-matching skill.
+rule:
+  pattern: $X.otherwise($$$)

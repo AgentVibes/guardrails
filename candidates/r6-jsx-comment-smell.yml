@@ -1,0 +1,14 @@
+id: r6-jsx-comment-smell
+language: tsx
+severity: hint
+message: |
+  R6 — JSX comment ({/* ... */}) is a smell. The element it labels
+  deserves a name — extract a named observer subcomponent.
+  Use the /refactor-jsx-comment slash command to extract.
+  See <vault>/_agent/Notes/2026-05-03-code-quality-rules.md R6.
+files:
+  - "apps/ppa/components/**/*.tsx"
+rule:
+  kind: jsx_expression
+  has:
+    kind: comment

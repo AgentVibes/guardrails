@@ -1,0 +1,7 @@
+# ast-grep config for the React structure check (guardrails verify / verify-diff).
+# Separate from ../sgconfig.yml on purpose: this dir holds a marker rule, not
+# a reportable finding — the reportable findings (react-multi-component,
+# react-component-too-long, react-component-needs-folder) are synthesised by
+# the CLI from the marker's per-file counts and line spans.
+ruleDirs:
+  - rules

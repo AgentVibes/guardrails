@@ -1,0 +1,21 @@
+id: mobx-effect-store-write
+language: tsx
+severity: error
+message: |
+  useEffect that writes to a store. This is `reaction()`-as-state-sync wearing a
+  useEffect costume — the same anti-pattern the mobx-models skill already bans,
+  just moved into the component tree where it re-runs on render instead of on
+  state change.
+  Move it into the store: a flow, an action called at the end of the flow that
+  produced the state, or a `computed get` if the value is derived.
+  See mobx-components "Anti-pattern: reaction() for state synchronization".
+rule:
+  all:
+    - pattern: useEffect($$$)
+    - has:
+        stopBy: end
+        kind: assignment_expression
+        has:
+          field: left
+          kind: member_expression
+          regex: '[Ss]tore\.'

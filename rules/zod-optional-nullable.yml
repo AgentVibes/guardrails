@@ -1,0 +1,12 @@
+id: zod-optional-nullable
+language: typescript
+severity: warning
+message: |
+  `z.X().optional()` / `z.X().nullable()` makes invalid states representable.
+  Prefer a discriminated union with explicit states so the absent case is a named variant.
+  See zod-schemas skill and defensive-errors philosophy.
+rule:
+  any:
+    - pattern: "z.$T().optional()"
+    - pattern: "z.$T().nullable()"
+    - pattern: "z.$T().nullish()"

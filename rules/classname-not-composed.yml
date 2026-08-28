@@ -1,0 +1,28 @@
+id: classname-not-composed
+language: tsx
+severity: error
+message: |
+  className built by string interpolation or a ternary. Class strings are a
+  vocabulary, not text to concatenate: compose them with `cn(...)` so
+  conflicting utilities resolve predictably, or — better — select a variant
+  prop on the UI component that owns those classes.
+    ❌ className={`card ... ${isOver ? "ring-2 ring-accent" : ""}`}
+    ✅ className={cn("card ...", isOver && "ring-2 ring-accent")}
+    ✅ <Card selected={isOver} />
+  See the ui-components skill (style vocabulary is centralized).
+rule:
+  all:
+    # A bare `className={$EXPR}` pattern does not parse standalone — a JSX
+    # attribute is not a valid program — so it needs context + selector.
+    - pattern:
+        context: '<a className={$EXPR} />'
+        selector: jsx_attribute
+    - has:
+        stopBy: end
+        any:
+          - kind: template_string
+          - kind: ternary_expression
+  not:
+    has:
+      stopBy: end
+      pattern: cn($$$)

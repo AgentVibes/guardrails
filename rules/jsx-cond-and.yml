@@ -1,0 +1,16 @@
+id: jsx-cond-and
+language: tsx
+severity: warning
+message: |
+  `{cond && <JSX/>}` in JSX silently drops the !cond branch (renders falsy).
+  Use the `<ShowWhen cond={cond}>{() => <JSX/>}</ShowWhen>` helper — it's an
+  observer (MobX-reactive) and communicates intent "show this subtree when cond".
+  For branches where both arms render something non-null, use match().exhaustive().
+  See defensive-errors Rule 1 & 2.
+rule:
+  any:
+    # Self-closing: {cond && <Foo />}
+    - pattern: $COND && <$TAG />
+    # With children: {cond && <Foo>…</Foo>}
+    - pattern: $COND && <$TAG>$$$CHILDREN</$TAG>
+    - pattern: $COND && <$TAG $$$PROPS>$$$CHILDREN</$TAG>

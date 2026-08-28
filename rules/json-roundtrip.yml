@@ -1,0 +1,9 @@
+id: json-roundtrip
+language: typescript
+severity: warning
+message: |
+  JSON.parse(JSON.stringify(x)) loses Maps, Sets, TypedArrays, class instances, circular refs.
+  Use a typed serializer with Zod validation at the boundary.
+  See defensive-errors Rule 5.
+rule:
+  pattern: "JSON.parse(JSON.stringify($X))"

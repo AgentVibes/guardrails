@@ -1,0 +1,35 @@
+id: jsx-ternary
+language: tsx
+severity: warning
+utils:
+  # A JSX subtree, however many redundant parens wrap it.
+  is-jsx:
+    any:
+      - kind: jsx_element
+      - kind: jsx_self_closing_element
+      - all:
+          - kind: parenthesized_expression
+          - has:
+              matches: is-jsx
+message: |
+  `cond ? <A/> : <B/>` branches on state with a ternary — the other half of the
+  ban `jsx-cond-and` enforces (react.md: "NEVER branch on state with
+  `if`/`switch`/ternary or `{cond && <JSX/>}`").
+  Both arms render, so nothing leaks into the DOM — what it costs is the build
+  break: widen what is being branched on and the second arm silently absorbs
+  the new case.
+    cond ? <A/> : <B/>   → match(value).with(…, () => <A/>).otherwise(() => <B/>)
+                           or a two-arm .exhaustive() when the union is closed
+    xs.length === 0 ? … → match(xs).with([], () => <Empty/>).otherwise(…)
+    cond ? <A/> : null   → <ShowWhen cond={cond}>{() => <A/>}</ShowWhen>
+  Match the value, not a boolean derived from it — that is what makes adding a
+  variant a type error. See defensive-errors Rule 1 & 2.
+rule:
+  kind: ternary_expression
+  any:
+    - has:
+        field: consequence
+        matches: is-jsx
+    - has:
+        field: alternative
+        matches: is-jsx

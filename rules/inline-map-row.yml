@@ -1,0 +1,107 @@
+# ── G1, rule 2 of 3: per-row observer extraction ───────────────────────
+#
+# The MobX list rule from CLAUDE.md: mapping an observable collection with the
+# row body written inline makes the PARENT track every field every row reads, so
+# one item's change invalidates the whole list. Extracting the row into its own
+# `observer` component localises the invalidation.
+#
+# The report's audit found this rule already obeyed everywhere it looked (131
+# `*Row.tsx` files in merkle alone) — so it lands as a ratchet on new code, not
+# as a cleanup campaign.
+#
+# Threshold: the mapped element must contain TWO OR MORE nested JSX elements
+# before this fires. That is what separates a row body from a wrapper, and it is
+# why these stay silent by design:
+#
+#   {xs.map(x => <li key={x.id}><Row item={x}/></li>)}        one nested element
+#   {xs.map(x => <li key={x.id}><a href={x.h}>{x.t}</a></li>)}  one nested element
+#
+# Both arguably want extracting too, but this rule is `error`, and an error that
+# fires on a one-element wrapper is an error people suppress. Under-match.
+#
+# Also out of scope by design: a `.map` outside JSX (`const rows = xs.map(…)`
+# assigned first, rendered as `{rows}`). Same defect, no JSX context to key on.
+id: inline-map-row
+language: tsx
+severity: error
+ignores:
+  - '**/*.test.tsx'
+  - '**/*.spec.tsx'
+  - '**/__tests__/**'
+  # A gallery/preview harness IS the markup it shows; extracting rows out of it
+  # would defeat the point of reading it as one page.
+  - '**/showcase/**'
+  - '**/*.stories.tsx'
+utils:
+  jsx-el:
+    any:
+      - kind: jsx_element
+      - kind: jsx_self_closing_element
+message: |
+  An inline row body inside `.map(...)`. The parent is an `observer`, so every
+  field this body reads is tracked by the PARENT — one item changing a single
+  field re-renders the entire list.
+  Extract the body into its own `observer` component and pass the item down:
+    {items.map(t => <TaskRow key={t.id} task={t} />)}
+  The parent then re-renders only on insert, remove and reorder; each row
+  re-renders on its own fields. See CLAUDE.md "MobX lists" and the
+  mobx-components skill.
+  Doesn't apply when the mapped children are pure data — constants or plain
+  props rather than observables.
+rule:
+  all:
+    - kind: jsx_element
+    # Anchor the finding on the row ROOT — the element the callback returns —
+    # so a deep body reports once at the line you would edit, instead of once
+    # per offending element on the way down. Nested JSX elements are direct
+    # children of their parent element, so an unqualified `inside` is exactly
+    # the "am I the outermost one" test.
+    - not:
+        inside:
+          kind: jsx_element
+    # Two or more nested JSX elements: one that has a JSX sibling before it.
+    # `stopBy: end` on `follows` is required — tree-sitter puts `jsx_text`
+    # nodes between JSX siblings, so the default immediate-sibling check never
+    # sees the element next door.
+    - has:
+        stopBy: end
+        all:
+          - matches: jsx-el
+          - follows:
+              stopBy: end
+              matches: jsx-el
+    # The enclosing component must BE an observer. This is not a narrowing of
+    # convenience — it is the rule's own rationale made into its scope: the
+    # defect is that the PARENT'S reactive scope tracks every field every row
+    # reads, and a component with no reactive scope has no such defect. It is
+    # also the only syntactically decidable form of CLAUDE.md's carve-out
+    # ("when the rendered children are pure data … the rule doesn't apply").
+    #
+    # Measured, not assumed: without this clause the rule fired 50 times in
+    # byoklab/components — a UI library and its examples/docs site, which
+    # contain no MobX whatsoever — where every hit was a false positive at
+    # `error` severity. With it, 0 there.
+    #
+    # A component that reads observables WITHOUT the wrap is a different defect
+    # and belongs to `missing-observer`, not here.
+    - inside:
+        stopBy: end
+        pattern: observer($$$)
+    - inside:
+        stopBy: end
+        all:
+          - pattern: $ARR.map($$$CB)
+          - inside:
+              stopBy: end
+              kind: jsx_expression
+          # CLAUDE.md's own carve-out: "When the rendered children are pure data
+          # (constants, plain props, not MobX observables), the rule doesn't
+          # apply." A literal array is the one case that is provably constant —
+          # observatory's SessionInfoSkeleton maps `[1, 2, 3, 4]` to draw four
+          # placeholder cards, which no amount of extraction improves.
+          - not:
+              has:
+                field: function
+                has:
+                  field: object
+                  kind: array

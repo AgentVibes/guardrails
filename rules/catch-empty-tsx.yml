@@ -1,0 +1,37 @@
+# The .tsx half of `catch-empty`.
+#
+# ast-grep's `typescript` and `tsx` languages are DISJOINT, not nested: a rule
+# at `language: typescript` matches `.ts` and NEVER `.tsx`, so `catch-empty`
+# was blind to every React component file. Verified by effect — byte-identical
+# content in `p.ts` and `p.tsx`, the first flagged and the second silent.
+#
+# Three ways to cover both were tried and two were rejected on measurement:
+#   - `language: [typescript, tsx]` — ast-grep refuses to parse the rule.
+#   - `languageGlobs: {tsx: ["*.ts"]}` — reassigns `.ts` to the tsx language, so
+#     EVERY remaining `language: typescript` rule goes dark. Measured corpus-wide:
+#     5 rules blinded, 6,094 findings lost against 334 gained. It would have
+#     looked like a coverage win.
+#   - two files with the SAME id — "Error: Duplicate rule id".
+# So: a separate id per language. The trailing `-tsx` is what you suppress with
+# in a .tsx file, and the finding prints the id, so copying from the output is
+# always right.
+#
+# Keep this file's `rule:` block IDENTICAL to `catch-empty.yml`. They are one
+# rule wearing two ids because the tool has no way to say "both languages".
+id: catch-empty-tsx
+language: tsx
+severity: error
+message: |
+  Empty catch silently swallows errors. Either handle specifically OR log + rethrow OR
+  return an explicit discriminated failure variant.
+  See defensive-errors Rule 8.
+  Suppressing this one needs the id you see above — `ast-grep-ignore: catch-empty-tsx`.
+  `catch-empty` is a DIFFERENT rule (the .ts arm) and does not cover it; ast-grep
+  matches suppression ids exactly. A bare `// ast-grep-ignore` suppresses every
+  rule on the line, and a wrong id is reported back as `unused-suppression`.
+rule:
+  any:
+    - pattern: |
+        try { $$$ } catch { }
+    - pattern: |
+        try { $$$ } catch ($_) { }

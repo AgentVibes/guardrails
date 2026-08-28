@@ -1,0 +1,76 @@
+# ── the .ts half of `demo-mode-by-default` ─────────────────────────────
+#
+# Same disjoint-language problem the `-tsx` twins solve, running the other way:
+# `demo-mode-by-default` is `language: tsx`, so it matched `.tsx` and NEVER
+# `.ts`. Verified by effect — an `initialState()` returning `{ mode: "demo" }`
+# flagged as `s.tsx` and completely silent as `s.ts`.
+#
+# That is the wrong half to be blind in. An `initialState` / `defaultState`
+# function returning a demo source lives in a plain `.ts` store, reducer or
+# config file at least as often as in a component, and this is the rule guarding
+# `fake-data.md` — "NEVER make a demo/fixture/mock source the DEFAULT". A rule
+# that stops at the component boundary is not guarding that.
+#
+# Costs nothing to close: 0 sites across all 69 repos under ~/gits/github,
+# counted BY RULE ID. (Counting every finding the config emits instead counts
+# `unused-suppression` and reads 205 — that mistake was made and caught.) And
+# the 0 is clean rather than broken: the rule fires on a known positive.
+#
+# Keep this file's `rule:` block IDENTICAL to `demo-mode-by-default.yml`.
+#
+# A fixture/demo/mock source chosen as the DEFAULT data source.
+#
+# The failure this encodes: apps/substrate-app shipped with
+#   function initialState(boot, narrow): State { … mode: { kind: "demo" }, … }
+# so the deployed site always opened on in-memory fixtures that accepted writes
+# and forgot them at reload. The owner worked in it for days and lost the issues
+# he had filed (2026-08-07).
+#
+# Scoped deliberately narrow — only the positions that decide what the app STARTS
+# on: an `initialState`-family function, a DEFAULT_/INITIAL_ binding, or the
+# initial argument of useState/useReducer. A demo literal inside a `.with(...)`
+# match arm is the correct pattern (an explicit flag selecting the sandbox) and is
+# excluded.
+#
+# Validated against the real pre-fix store.tsx: 1 hit at the exact declaration,
+# 0 on the fixed version, 0 across substrate-app, tg-gallery webapp and
+# agent-workbench web.
+id: demo-mode-by-default-ts
+language: typescript
+severity: error
+message: "A fixture/demo/mock source is the DEFAULT here. The default must be the real source; the sandbox belongs behind an explicit flag."
+note: |
+  The default data source must be the real one. Put the sandbox behind an
+  explicit opt-in (`?mode=demo`, a flag, a separate entry) whose absence means
+  real, and make writes that cannot persist FAIL rather than report success.
+  See the fake-data-boundaries skill.
+  Suppressing this one needs the id you see above — `ast-grep-ignore: demo-mode-by-default-ts`.
+  `demo-mode-by-default` is a DIFFERENT rule (the .tsx arm) and does not cover it.
+rule:
+  all:
+    - kind: pair
+    - has:
+        field: key
+        regex: '^(kind|mode|backend|source|dataSource|driver|adapter|transport|client)$'
+    - has:
+        field: value
+        regex: '^.(demo|mock|fixture|fake|stub|sample|seed).$'
+    - not:
+        inside:
+          stopBy: end
+          any:
+            - pattern: $OBJ.with($$$WARGS)
+            - pattern: $OBJ.when($$$WARGS)
+    - inside:
+        stopBy: end
+        any:
+          - kind: function_declaration
+            has:
+              field: name
+              regex: '^(initialState|createInitialState|defaultState|makeInitialState|initState|createDefaultState)$'
+          - kind: variable_declarator
+            has:
+              field: name
+              regex: '^(INITIAL_STATE|DEFAULT_STATE|INITIAL_MODE|DEFAULT_MODE|DEFAULT_BACKEND|initialState|defaultState)$'
+          - pattern: useState($$$ARGS)
+          - pattern: useReducer($$$ARGS)

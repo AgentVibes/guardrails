@@ -1,0 +1,24 @@
+id: r9-optional-store-arg
+language: typescript
+severity: warning
+message: |
+  R9 — Optional `?:` parameter or property in store API. Either every
+  caller passes it (required) or none do (don't define it). For "patch
+  any subset" shapes, model as a discriminated union of intents OR
+  split into N narrow methods.
+  Boundary cases (wrapping isomorphic-git, etc.) are exempt via the
+  ignores list below.
+  See <vault>/_agent/Notes/2026-05-03-code-quality-rules.md R9.
+files:
+  - "apps/ppa-libs/store/src/**/*.ts"
+  - "packages/gitapp-store/src/**/*.ts"
+ignores:
+  - "**/__tests__/**"
+  - "**/contents/iso-git/**"
+  - "**/operations.ts"
+rule:
+  any:
+    - kind: property_signature
+      regex: '\?:'
+    - kind: required_parameter
+      regex: '\?:'

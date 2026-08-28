@@ -1,0 +1,21 @@
+id: r3-hooks-outside-layout
+language: tsx
+severity: warning
+message: |
+  R3 — React hook (useState/useCallback/useMemo/useEffect) outside a
+  layout/page root. Promote local state to a ui-tier MobX store and
+  bind via plain props. The only legitimate hook callsites are:
+    - apps/ppa/app/_layout.tsx
+    - apps/ppa/app/(app)/_layout.tsx
+    - PageStoreManager.getOrCreate(...) wrapping at a route root
+    - Animation primitives (mark with `// hooks-ok: animation` comment)
+  See <vault>/_agent/Notes/2026-05-03-code-quality-rules.md R3.
+files:
+  - "apps/ppa/components/**/*.tsx"
+rule:
+  any:
+    - pattern: 'useState($$$)'
+    - pattern: 'useCallback($$$)'
+    - pattern: 'useMemo($$$)'
+    - pattern: 'useEffect($$$)'
+    - pattern: 'useReducer($$$)'

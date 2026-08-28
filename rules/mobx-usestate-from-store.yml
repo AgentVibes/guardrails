@@ -1,0 +1,20 @@
+id: mobx-usestate-from-store
+language: tsx
+severity: warning
+message: |
+  useState seeded from observable state. Now there are two copies of the same
+  value and nothing keeps them in sync — which is why the next line is usually a
+  useEffect that re-assigns it on every id change (with an eslint/biome ignore
+  comment admitting the dependency list is a lie).
+  A draft being edited is a real thing — put it in the store (or a small
+  UI-state model) so it is observable, or reset it with `key={id}` on the child
+  instead of syncing it by effect. Read-only display needs no local copy at all.
+rule:
+  all:
+    - pattern: useState($INIT)
+    - has:
+        field: arguments
+        has:
+          stopBy: end
+          kind: member_expression
+          regex: '[Ss]tore\.'

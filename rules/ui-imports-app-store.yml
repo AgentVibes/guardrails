@@ -1,0 +1,49 @@
+id: ui-imports-app-store
+language: tsx
+severity: error
+message: |
+  A reusable UI component importing an app store. The moment it knows where the
+  data comes from it stops being reusable — and the boundary is the whole point:
+  a UI component consumes an interface (props, or a view-model interface the
+  store implements), never the store itself.
+  Take the values as props and let the app component do the reading. See the
+  ui-components skill.
+files:
+  - '**/packages/ui/**'
+  - '**/components/ui/**'
+  - '**/src/ui/**'
+utils:
+  # A type-only import: erased at build time, so it creates no dependency on the
+  # store — only on its shape. Covers all four spellings TypeScript allows.
+  type-only-import:
+    any:
+      - pattern: import type { $$$S } from $SRC
+      - pattern: import type $D from $SRC
+      - pattern: import type * as $NS from $SRC
+      # `import { type A, type B }` — every named specifier inline-typed.
+      - all:
+          - kind: import_statement
+          - has:
+              stopBy: end
+              kind: named_imports
+          - not:
+              has:
+                stopBy: end
+                all:
+                  - kind: import_specifier
+                  - not:
+                      regex: '^type\s'
+rule:
+  all:
+    - kind: import_statement
+    - has:
+        stopBy: end
+        kind: string_fragment
+        regex: '(^|/)stores?(/|$)'
+    # X7 (report §2): the view-model pattern this rule exists to protect tells a
+    # UI component to type itself against `IXxxModel` — which lives in the store
+    # module. Firing at `error` on that import made the rule contradict the
+    # pattern it enforces, so a compliant component could not be written without
+    # a suppression comment. A type import is the compliant shape, not a breach.
+    - not:
+        matches: type-only-import

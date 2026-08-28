@@ -1,0 +1,49 @@
+{
+  "name": "@agentvibes/guardrails",
+  "version": "0.1.0",
+  "description": "Verification toolkit that makes agents write simple code: ast-grep rule canon, diff ratchet, biome/tsconfig presets, one CLI.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AgentVibes/guardrails.git"
+  },
+  "type": "module",
+  "bin": {
+    "guardrails": "dist/cli.js"
+  },
+  "exports": {
+    "./biome": "./configs/biome.json",
+    "./tsconfig": "./configs/tsconfig.base.json",
+    "./sgconfig": "./sgconfig.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "rules",
+    "structure",
+    "candidates",
+    "configs",
+    "sgconfig.yml",
+    "mise.toml"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test:rules": "node dist/testRules.js",
+    "test:gate": "node dist/gateRed.js",
+    "check": "pnpm build && pnpm lint && pnpm test:rules && pnpm test:gate"
+  },
+  "dependencies": {
+    "ts-pattern": "^5.6.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "@types/node": "^22.13.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.12.1"
+}

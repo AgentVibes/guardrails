@@ -1,0 +1,35 @@
+id: component-decl
+language: tsx
+severity: info
+message: |
+  Marker rule — matches every top-level React component declaration so
+  check-structure.sh can count them per file and measure their spans.
+  Never reported directly (severity info is invisible to the post-edit hook
+  and to the CI diff gate, both of which only look at error/warning tiers).
+rule:
+  all:
+    # `const Foo = <anything>` or `function Foo(...) { ... }`
+    - any:
+        - pattern: const $N = $INIT
+        - pattern: |
+            function $N($$$) { $$$ }
+    # ...that renders JSX somewhere inside. Excludes `const StoreContext =
+    # createContext(...)`, capitalised constant maps, class instances, etc.
+    - has:
+        stopBy: end
+        any:
+          - kind: jsx_element
+          - kind: jsx_self_closing_element
+  # Only top-level declarations count. A component defined inside another
+  # function is a different (worse) problem — see noNestedComponentDefinitions.
+  not:
+    inside:
+      stopBy: end
+      any:
+        - kind: arrow_function
+        - kind: function_declaration
+        - kind: function_expression
+        - kind: method_definition
+constraints:
+  N:
+    regex: '^[A-Z][A-Za-z0-9]*$'

@@ -1,0 +1,110 @@
+# ── G1, rule 3 of 3: reaching past the store boundary ──────────────────
+#
+# Scoped to decision D1 (report §8): the global `rootStore` is a module-level
+# singleton imported DIRECTLY at screen level — that is now the sanctioned
+# channel, and this rule must not fight it. What stays banned is reaching past
+# it: pulling a store CLASS into a component file, or grabbing one slice-store
+# singleton so the component depends on an implementation instead of a model
+# handed down as a prop.
+#
+# So the rule keys on the imported BINDING, not on the directory alone:
+#
+#   import { rootStore } from "…/stores/rootStore"     legal   (D1)
+#   import { galleryStore } from "…/stores/gallery"    flagged (slice store)
+#   import { GalleryStore } from "…/stores/gallery"    flagged (store class)
+#   import { useStore } from "…/stores/StoreContext"   ignored (access hook)
+#   import type { IGalleryModel } from "…/stores/…"    ignored (C40 contract)
+#
+# NEAR-TERM SCOPE, stated plainly: "component file" is approximated by `.tsx`,
+# and screens are not distinguished from leaf components — so a screen importing
+# a page-store class is flagged alongside a leaf component doing the same. The
+# real boundary needs the manifest's `screens` glob from `.agentvibes/project.toml`
+# (report §8), which arrives with the `@agentvibes/guardrails` package. Until
+# then this rule is the pragmatic half: it catches slice-store and store-class
+# imports anywhere in `.tsx`, and leaves `rootStore` alone everywhere.
+#
+# `*.view.tsx` is stricter — a view may not touch a store by ANY route,
+# `rootStore` included. That needs a different `files:` glob, which ast-grep
+# scopes per rule file, so it lives in `view-imports-store.yml`.
+id: direct-store-import
+language: tsx
+severity: error
+files:
+  - '**/*.tsx'
+ignores:
+  # A test constructing a store directly is the PRESCRIBED shape, not a breach:
+  # report §8 puts `new GalleryPageStore(fakeRoot, "slug")` with no render at
+  # the centre of why the store is "отдельный легко тестируемый". Without this,
+  # 15 of observatory's 21 hits were tests doing exactly the right thing.
+  - '**/*.test.tsx'
+  - '**/*.spec.tsx'
+  - '**/__tests__/**'
+  # The composition root wires dependencies once before the first render —
+  # `initRootStore(deps)` in report §8. Observatory's `main.tsx` picks its data
+  # source here, which is also where fake-data.md REQUIRES the choice to be made.
+  - '**/main.tsx'
+  # A gallery, storybook or preview harness legitimately builds stores over
+  # fixtures — fake-data.md carves this out explicitly ("Fixtures are legitimate
+  # where the artifact IS the components"). 29 such files in the park today.
+  - '**/showcase/**'
+  - '**/*.stories.tsx'
+utils:
+  type-only-import:
+    any:
+      - pattern: import type { $$$S } from $SRC
+      - pattern: import type $D from $SRC
+      - pattern: import type * as $NS from $SRC
+      - all:
+          - kind: import_statement
+          - has:
+              stopBy: end
+              kind: named_imports
+          - not:
+              has:
+                stopBy: end
+                all:
+                  - kind: import_specifier
+                  - not:
+                      regex: '^type\s'
+message: |
+  A store class or slice-store singleton imported straight into a component
+  file. The component is now welded to one implementation: it cannot be
+  rendered in a test, a story or a second screen without dragging that store
+  in with it.
+  Take the data as a prop — a `model` typed by the view-model interface the
+  store implements (`IXxxModel`) — and let the screen do the reading. The
+  global `rootStore` imported at screen level is legal (decision D1); this is
+  about everything reached past it.
+  `import type { IXxxModel } from ".../stores/..."` is the compliant shape and
+  does not fire. See the mobx-models and mobx-components skills.
+rule:
+  all:
+    - kind: import_statement
+    - has:
+        field: source
+        has:
+          stopBy: end
+          kind: string_fragment
+          regex: '(^|/)stores?(/|$)'
+    # A binding whose name says "store", excluding the two legal ones: the
+    # global singleton (D1) and the `use…Store` access hooks.
+    - has:
+        stopBy: end
+        all:
+          - kind: identifier
+          - regex: 'Store$'
+          - not:
+              regex: '^rootStore$'
+          - not:
+              regex: '^use[A-Z]'
+          # X7 again, one level down: `import { NOTIFICATION_KINDS, type
+          # NotificationSettingsStore }` is a value import, so the whole-statement
+          # type check above does not exclude it — but the store name in it is
+          # still just a type. Observatory's NotificationsSettingsView.tsx was
+          # flagged for exactly this before the clause existed.
+          - not:
+              inside:
+                kind: import_specifier
+                regex: '^type\s'
+    - not:
+        matches: type-only-import

@@ -1,0 +1,8 @@
+# Pinned toolchain for @agentvibes/guardrails. The CLI resolves ast-grep and
+# biome from PATH first and falls back to `mise x <tool>@<pin>` using these
+# pins, so every host (and CI via jdx/mise-action) runs the same versions.
+[tools]
+node = "25.9.0"
+pnpm = "10.12.1"
+ast-grep = "0.45.2"
+biome = "2.5.10"

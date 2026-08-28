@@ -1,0 +1,13 @@
+id: r1d-scattered-numeric-const-in-component
+language: tsx
+severity: warning
+message: |
+  R1d — Module-level numeric ALL_CAPS constant in a component file.
+  Move to apps/ppa/lib/tokens.ts (layout dimensions) or a per-module
+  constants.ts (timeouts, thresholds, limits).
+  See <vault>/_agent/Notes/2026-05-03-code-quality-rules.md R1.
+files:
+  - "apps/ppa/components/**/*.tsx"
+rule:
+  kind: variable_declarator
+  regex: '^[A-Z][A-Z0-9_]+ = -?[0-9]'

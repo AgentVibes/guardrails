@@ -1,0 +1,13 @@
+id: kind-if-without-match
+language: typescript
+severity: warning
+message: |
+  Discriminated-union branching with if/else silently ignores new variants.
+  Use match($X).with({kind: ...}, ...).exhaustive() from ts-pattern.
+  See defensive-errors Rule 2 and the pattern-matching skill.
+rule:
+  any:
+    - pattern: "if ($X.kind === $_) $_"
+    - pattern: "if ($X.type === $_) $_"
+    - pattern: "if ($X.status === $_) $_"
+    - pattern: "if ($X._obj === $_) $_"

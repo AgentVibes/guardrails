@@ -1,0 +1,11 @@
+id: instanceof-map-set
+language: typescript
+severity: error
+message: |
+  Do NOT use `instanceof Map / Set`. Data crossing serialization/immer/MobX boundaries
+  loses its runtime type. Duck-type capabilities instead, or use a typed accessor.
+  See defensive-errors Rule 3 and Rule 4b.
+rule:
+  any:
+    - pattern: "$X instanceof Map"
+    - pattern: "$X instanceof Set"

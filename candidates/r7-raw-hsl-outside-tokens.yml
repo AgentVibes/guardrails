@@ -1,0 +1,17 @@
+id: r7-raw-hsl-outside-tokens
+language: tsx
+severity: warning
+message: |
+  R7 — Raw hsl(...) string in a component. Use useTokens() and the
+  semantic tokens defined in apps/ppa/lib/tokens.ts. If the token
+  you need doesn't exist, ADD it to tokens.ts/themed-tokens.ts first.
+  See <vault>/_agent/Notes/2026-05-03-code-quality-rules.md R7
+  and AGENTS.md (HSL/tokens rule).
+files:
+  - "apps/ppa/components/**/*.tsx"
+ignores:
+  - "**/_fixture.ts"
+  - "**/__tests__/**"
+rule:
+  kind: string
+  regex: 'hsl\('

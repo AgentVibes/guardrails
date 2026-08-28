@@ -1,0 +1,27 @@
+# CI gate — BLOCKING on purpose. No `|| echo warning`, no continue-on-error:
+# a non-blocking quality step is the anti-pattern this package exists to kill.
+# `pnpm check` = build (tsc) + biome lint + rule-fixture harness + the
+# gate-can-go-red test (verify must exit 1 on a deliberately bad file).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installs the exact toolchain mise.toml pins (node, pnpm, ast-grep,
+      # biome) — CI runs what every host runs.
+      - uses: jdx/mise-action@v2
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm check
+
+      - name: pack must succeed
+        run: pnpm pack

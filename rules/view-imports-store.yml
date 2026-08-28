@@ -1,0 +1,64 @@
+# ── G1, rule 3 of 3 (second half): stores are banned outright in views ─
+#
+# Split from `direct-store-import.yml` for one mechanical reason: ast-grep scopes
+# `files:` per rule file, and the two halves need different globs. This is not a
+# fourth rule so much as the `*.view.tsx` arm of the third.
+#
+# Report §9 fixes the view contract as props → JSX and nothing else: no hooks, no
+# `match`, no data transformation, no store. That is stricter than the rest of
+# `.tsx`, where decision D1 makes a `rootStore` import legal at screen level — a
+# view is never a screen, so `rootStore` is banned here too, and so is `useStore`.
+#
+# The only store-path import a view may keep is a type: C40 has the view take
+# `model={store}` typed by `IXxxModel`, which lives in the store module and
+# erases at build time.
+#
+# Expected hit count today: zero. `*.view.tsx` does not exist anywhere in the
+# park yet (the two-tier split ships as a recommendation first, report §9 /
+# decision #8). This is a guardrail waiting at the convention's door, not a
+# finding about current code.
+id: view-imports-store
+language: tsx
+severity: error
+files:
+  - '**/*.view.tsx'
+utils:
+  type-only-import:
+    any:
+      - pattern: import type { $$$S } from $SRC
+      - pattern: import type $D from $SRC
+      - pattern: import type * as $NS from $SRC
+      - all:
+          - kind: import_statement
+          - has:
+              stopBy: end
+              kind: named_imports
+          - not:
+              has:
+                stopBy: end
+                all:
+                  - kind: import_specifier
+                  - not:
+                      regex: '^type\s'
+message: |
+  A `*.view.tsx` importing from a stores directory. A view is props in, JSX out
+  — it has no hooks, no branching and no data access, which is exactly what
+  makes it the file a cheap model writes without getting it wrong, and what
+  lets its test mount it with nothing around it.
+  Move the read up to the logic component and hand the view what it renders.
+  Unlike the rest of the app, the global `rootStore` is not an exception here:
+  a view is never a screen.
+  `import type { IXxxModel }` IS allowed — typing the view against the model
+  interface it renders is the prescribed shape (C40). See report §9 and the
+  mobx-components skill.
+rule:
+  all:
+    - kind: import_statement
+    - has:
+        field: source
+        has:
+          stopBy: end
+          kind: string_fragment
+          regex: '(^|/)stores?(/|$)'
+    - not:
+        matches: type-only-import

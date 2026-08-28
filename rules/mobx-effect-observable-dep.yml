@@ -1,0 +1,23 @@
+id: mobx-effect-observable-dep
+language: tsx
+severity: warning
+message: |
+  useEffect whose dependency array reads observable state (`someStore.field`).
+  React is being used to react to MobX — but MobX already does that, correctly,
+  without a render pass in between. A dependency array cannot track an
+  observable it did not read during render, so this drifts.
+  Derived value → `computed get`. Side effect on state change → a `reaction()`
+  in the store (I/O boundaries only). Load on route change → the page-level
+  fetch convention, where the dependency is the route param, not a store field.
+  Passing the store itself (`[slug, galleryStore]`) is fine — that is a stable
+  reference, not a state read.
+rule:
+  all:
+    - pattern: useEffect($CB, [$$$DEPS])
+    - has:
+        field: arguments
+        has:
+          kind: array
+          has:
+            kind: member_expression
+            regex: '[Ss]tore\.'

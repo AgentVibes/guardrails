@@ -1,0 +1,34 @@
+id: classname-visual-identity
+language: tsx
+severity: warning
+message: |
+  Visual-identity utilities (colour, ring, shadow, radius, opacity, animation,
+  type scale) written in an app component. Those classes are the design
+  language — they belong to the UI component that owns them, selected through a
+  variant prop, not scattered across screens.
+    ❌ <button className="rounded-lg bg-red-500/20 px-2 text-red-200">
+    ✅ <Button tone="danger" size="sm">
+  Layout utilities (flex, grid, gap-*, p-*, w-*, items-*) stay legal here —
+  layout is per-screen composition, not identity. See the ui-components skill.
+  If this genuinely has no UI-component home yet, suppress with a justification.
+ignores:
+  - '**/packages/ui/**'
+  - '**/components/ui/**'
+  - '**/src/ui/**'
+  - '**/*.test.tsx'
+  - '**/*.stories.tsx'
+rule:
+  all:
+    # Matched by kind, not by pattern, so that BOTH attribute forms are covered:
+    # className="..." (plain string) and className={...} (expression container).
+    - kind: jsx_attribute
+    - has:
+        kind: property_identifier
+        regex: '^className$'
+    - has:
+        stopBy: end
+        any:
+          - kind: string_fragment
+            regex: '(^|[\s"''`:])(bg-|ring-|shadow-|animate-|rounded-|opacity-|backdrop-|text-(xs|sm|base|lg|xl|[2-9]xl|red|green|amber|blue|slate|gray|zinc|white|black)|border-(red|green|amber|blue|slate|gray|zinc|white|black))'
+          - kind: string_fragment
+            regex: 'text-tg-|bg-tg-|ring-tg-|border-tg-'

@@ -1,0 +1,17 @@
+id: silent-default-return
+language: typescript
+severity: warning
+message: |
+  Silent-default return on negation. Hides upstream bugs.
+  Throw with a contextual message, or return an explicit discriminated failure variant.
+  See defensive-errors Rule 1.
+rule:
+  any:
+    - pattern: "if (!$X) return null"
+    - pattern: "if (!$X) return []"
+    - pattern: "if (!$X) return 0"
+    - pattern: "if (!$X) return \"\""
+    - pattern: "if ($X === undefined) return null"
+    - pattern: "if ($X === undefined) return []"
+    - pattern: "if ($X == null) return null"
+    - pattern: "if ($X == null) return []"

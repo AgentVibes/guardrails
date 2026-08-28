@@ -1,0 +1,189 @@
+# ── G1, rule 1 of 3: the observer wrap ─────────────────────────────────
+#
+# `missing-observer` has been listed under "Validation" in mobx-components/SKILL.md
+# for months while existing in no rules/ directory at all. The sketch that was
+# published alongside it (ast-grep/SKILL.md) could not have matched the canonical
+# code even if it had been installed: it required the literal body
+#
+#   export const $NAME = () => { $$$  useStore()  $$$ }
+#
+# — a bare `useStore()` statement. Every real call site destructures
+# (`const { data, ui } = useStore()`), so the pattern matched nothing anywhere in
+# the park. This is the rule written against the shapes that are actually there.
+#
+# Deliberately UNDER-matching, and at `warning` rather than `error`. "Reads
+# observable data" is not a syntactic property — a component can hold an
+# observable that arrived through any prop under any name. Guessing wider buys
+# false positives, and a rule that cries wolf is a rule people turn off. Two
+# arms only, both of which name the store at the call site:
+#
+#   1. it calls a `use…Store` hook, or
+#   2. it takes a prop literally named `model` or `store` AND dereferences it.
+#
+# What it therefore MISSES, on purpose: a component handed an observable under
+# any other prop name (`session={s}`, `photo={p}`). Those still need the wrap;
+# this rule is not the thing that will tell you.
+#
+# Known false-positive class, accepted at warning tier: a `use…Store` hook can
+# return non-observable services next to the stores — `const { platform } =
+# useStore()` in tg-gallery's ShareButton pulls a platform adapter, and a
+# component reading only that does not strictly need the wrap. Wrapping it is
+# harmless; the rule does not distinguish.
+id: missing-observer
+language: tsx
+severity: warning
+ignores:
+  - '**/*.test.tsx'
+  - '**/*.spec.tsx'
+  - '**/__tests__/**'
+  - '**/showcase/**'
+  - '**/*.stories.tsx'
+utils:
+  # A fragment (`<>…</>`) parses as a `jsx_element` with empty tags in this
+  # grammar, so these two kinds cover every JSX return shape.
+  jsx-node:
+    any:
+      - kind: jsx_element
+      - kind: jsx_self_closing_element
+  # `useStore()`, `useGalleryStore()`, `usePageStore()`, `useRootStore()`.
+  store-hook-call:
+    kind: call_expression
+    has:
+      field: function
+      kind: identifier
+      regex: '^use(Store|[A-Z][A-Za-z0-9]*Store)$'
+  # Every name a store hook can introduce, in the three spellings the park uses.
+  # Binding these is what lets the rule tell `ui.groupBy` (a plain `UIManifest`
+  # prop) apart from `uiStore.x` (the store) — without it the rule fires on any
+  # dotted value in the markup, which is how observatory's deliberately-plain
+  # `RichEntityListView` got flagged for rendering `groupBy={ui.groupBy}`.
+  store-binding:
+    any:
+      # const { data, ui } = useStore()
+      - all:
+          - kind: shorthand_property_identifier_pattern
+          - inside:
+              kind: object_pattern
+              inside:
+                kind: variable_declarator
+                has:
+                  field: value
+                  matches: store-hook-call
+      # const { ui: uiStore } = useStore()  → the local alias
+      - all:
+          - kind: identifier
+          - inside:
+              kind: pair_pattern
+              field: value
+              inside:
+                kind: object_pattern
+                inside:
+                  kind: variable_declarator
+                  has:
+                    field: value
+                    matches: store-hook-call
+      # const store = useStore()
+      - all:
+          - kind: identifier
+          - inside:
+              kind: variable_declarator
+              field: name
+              has:
+                field: value
+                matches: store-hook-call
+  # Read DURING RENDER — which is what creates the subscription an observer
+  # wrap is needed to service — as opposed to touched only from a handler or an
+  # effect, neither of which subscribes anything.
+  #
+  # Stated as an exclusion of the two deferred positions rather than as "appears
+  # inside JSX", because real components mostly do NOT dereference the store in
+  # the markup: tg-gallery's GalleryView reads `const layoutType =
+  # themeStore.layout.type` and `match(galleryStore.detailState)`, observatory's
+  # SessionsTreeSection reads `data.sessions.filter(...)` — all render reads,
+  # none of them inside a JSX expression. An "inside JSX" test missed every one.
+  # The test is structural: a read sitting inside a NESTED function is deferred,
+  # a read at the component's own body level runs during render.
+  #
+  # It works because the component is itself a function. A body-level read has
+  # exactly one function ancestor — the component. Anything deferred has two or
+  # more: `useEffect(() => …)`, `onOpen={(e) => uiStore.open(e.id)}`, and
+  # `const onPress = () => ui.close(id)` all put a second function in between.
+  # So "is there a function ancestor that itself has a function ancestor" asks
+  # exactly the right question, and asks it without enumerating hook names or
+  # handler spellings — an enumerated list missed the local-handler form and the
+  # good fixture caught it.
+  render-position:
+    not:
+      inside:
+        stopBy: end
+        all:
+          - any:
+              - kind: arrow_function
+              - kind: function_expression
+              - kind: function_declaration
+          - inside:
+              stopBy: end
+              any:
+                - kind: arrow_function
+                - kind: function_expression
+                - kind: function_declaration
+message: |
+  A component that reads observable state without an `observer(...)` wrap. It
+  renders once with whatever the store held at mount and then goes quiet —
+  nothing subscribes it to the fields it read, so the screen silently shows
+  stale data until some ancestor happens to re-render it.
+  Wrap the component: `export const X = observer(({ model }: Props) => …)`.
+  Scope note: this fires only when the store is named at the call site — a
+  `use…Store` hook, or a `model`/`store` prop being dereferenced. A component
+  handed an observable under any other prop name still needs the wrap and this
+  rule will not catch it. See the mobx-components skill.
+rule:
+  all:
+    - any:
+        - kind: variable_declarator
+        - kind: function_declaration
+    # PascalCase — a component, not a custom hook. A hook may read the store
+    # freely; the wrap belongs on whoever renders with it.
+    - has:
+        field: name
+        regex: '^[A-Z][A-Za-z0-9]*$'
+    - has:
+        stopBy: end
+        matches: jsx-node
+    # The component must RENDER a field off something the store gave it. Both
+    # halves matter: a component that pulls a store only to call an action from
+    # a handler needs no wrap (observatory writes two of those on purpose), and
+    # a dotted value in the markup means nothing unless the dotted thing came
+    # from a store. `$SLICE` ties the two clauses together.
+    - any:
+        # Arm 1: a binding introduced by a `use…Store` hook, then rendered.
+        - all:
+            - has:
+                stopBy: end
+                all:
+                  - matches: store-binding
+                  - pattern: $SLICE
+            - has:
+                stopBy: end
+                all:
+                  - pattern: $SLICE.$FIELD
+                  - matches: render-position
+        # Arm 2: a prop literally named `model` or `store`, then rendered.
+        - all:
+            - has:
+                stopBy: end
+                kind: shorthand_property_identifier_pattern
+                regex: '^(model|store)$'
+            - has:
+                stopBy: end
+                all:
+                  - kind: member_expression
+                  - has:
+                      field: object
+                      kind: identifier
+                      regex: '^(model|store)$'
+                  - matches: render-position
+    - not:
+        has:
+          stopBy: end
+          pattern: observer($$$)

@@ -1,0 +1,22 @@
+id: r2-helper-fn-in-tsx
+language: tsx
+severity: warning
+message: |
+  R2 — Helper function declared in a component file. Move to either:
+    - the appropriate MobX store as a `get` (computed) or method (action), or
+    - apps/ppa/lib/<scope>/ as a stateless utility.
+  Component files should be thin views; logic lives in stores.
+  Note: this rule has unavoidable false positives — it can't distinguish
+  PascalCase observer-wrapped components from helpers without metavariable
+  regex (unsupported in ast-grep 0.42). Filter visually or use the
+  scripts/lint/helpers-in-tsx.sh wrapper which adds a camelCase guard.
+  See <vault>/_agent/Notes/2026-05-03-code-quality-rules.md R2.
+files:
+  - "apps/ppa/components/**/*.tsx"
+rule:
+  any:
+    # Arrow functions WITH explicit return type — strongest signal of "helper"
+    - kind: variable_declarator
+      regex: '^[a-z][a-zA-Z0-9]* = .*\): [A-Za-z<>|& ]+ =>'
+    # function declarations
+    - pattern: 'function $NAME($$$): $RT { $$$ }'

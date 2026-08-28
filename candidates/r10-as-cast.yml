@@ -1,0 +1,24 @@
+id: r10-as-cast
+language: typescript
+severity: warning
+message: |
+  R10 — `as Type` cast. Use Zod .safeParse() at boundaries, type guards,
+  or fix the source type. Allowed: `as const`, `as never` (test stubs),
+  `as any` (still flagged separately by defensive-errors as-any-escape).
+  See <vault>/_agent/Notes/2026-05-03-code-quality-rules.md R10.
+files:
+  - "apps/ppa-libs/store/src/**/*.ts"
+  - "apps/ppa/**/*.ts"
+  - "apps/ppa/**/*.tsx"
+ignores:
+  - "**/__tests__/**"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+rule:
+  pattern: '$EXPR as $TYPE'
+  not:
+    any:
+      - pattern: '$EXPR as const'
+      - pattern: '$EXPR as never'
+      - pattern: '$EXPR as any'
+      - pattern: '$EXPR as unknown'
