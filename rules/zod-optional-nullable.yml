@@ -1,3 +1,10 @@
+# ── rule body adopted from faceless-photo-lib `zod-no-optional-nullable` (wave 2 triage) ──
+# The two rules were duplicates; the faceless implementation is strictly better,
+# so the canon id keeps its message and takes that body. Why it is better here:
+# `z.$T().optional()` only matched a DIRECT call on `z` — it missed both
+# `UserSchema.optional()` and any chained builder (`z.string().min(1).optional()`).
+# The receiver anchor keeps it to real zod schemas. Measured: +14 findings, 0 lost.
+#
 id: zod-optional-nullable
 language: typescript
 severity: warning
@@ -6,7 +13,17 @@ message: |
   Prefer a discriminated union with explicit states so the absent case is a named variant.
   See zod-schemas skill and defensive-errors philosophy.
 rule:
-  any:
-    - pattern: "z.$T().optional()"
-    - pattern: "z.$T().nullable()"
-    - pattern: "z.$T().nullish()"
+  all:
+    - kind: call_expression
+      has:
+        field: function
+        kind: member_expression
+        has:
+          field: property
+          regex: "^(optional|nullable|nullish)$"
+    # Anchor: the receiver chain mentions `z` or a `*Schema` binding, i.e. this
+    # really is a zod schema and not an unrelated builder with the same method.
+    - has:
+        stopBy: end
+        kind: identifier
+        regex: "^(z|.*Schema)$"

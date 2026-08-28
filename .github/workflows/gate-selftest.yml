@@ -14,3 +14,6 @@ jobs:
     uses: ./.github/workflows/guardrails-gate.yml
     with:
       leaks: true
+      # pnpm does not link a package's own bin into node_modules/.bin, so the
+      # self-repo invokes the built CLI directly (prepare builds dist on install).
+      guardrails_cmd: node dist/cli.js

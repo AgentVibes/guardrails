@@ -1,3 +1,10 @@
+# ── rule body adopted from faceless-photo-lib `no-as-any` (wave 2 triage) ──
+# The two rules were duplicates; the faceless implementation is strictly better,
+# so the canon id keeps its message and takes that body. Why it is better here:
+# surface `pattern:` is compared at ast-grep's default `smart` strictness, which
+# also compares interleaved `comment` nodes — so `x as /* why */ any` slipped
+# straight through. The structural form cannot be fooled that way.
+#
 id: as-any-escape
 language: typescript
 severity: error
@@ -7,5 +14,16 @@ message: |
   See defensive-errors Rule 7.
 rule:
   any:
-    - pattern: "$X as any"
-    - pattern: "$X as unknown as $_"
+    # `x as any`
+    - kind: as_expression
+      has:
+        kind: predefined_type
+        regex: "^any$"
+    # `x as unknown as T` — the double-cast that launders `unknown` back to a
+    # concrete type without validating anything.
+    - kind: as_expression
+      has:
+        kind: as_expression
+        has:
+          kind: predefined_type
+          regex: "^unknown$"

@@ -1,3 +1,11 @@
+# ── rule body adopted from faceless-photo-lib `no-empty-catch` (wave 2 triage) ──
+# The two rules were duplicates; the faceless implementation is strictly better,
+# so the canon id keeps its message and takes that body. Why it is better here:
+# the old patterns covered `catch {}` and `catch (e) {}` but NOT `catch (e:
+# unknown) {}` / `catch (e: any) {}` — the type annotation is an extra named node.
+# Measured on tg-gallery + observatory + byok + faceless: 0 files lost, 1 gained,
+# and the finding now anchors on the `catch` keyword rather than the `try`.
+#
 # The .tsx half of `catch-empty`.
 #
 # ast-grep's `typescript` and `tsx` languages are DISJOINT, not nested: a rule
@@ -31,7 +39,17 @@ message: |
   rule on the line, and a wrong id is reported back as `unused-suppression`.
 rule:
   any:
-    - pattern: |
-        try { $$$ } catch { }
-    - pattern: |
-        try { $$$ } catch ($_) { }
+    - pattern:
+        context: "try { work(); } catch { }"
+        selector: catch_clause
+        strictness: relaxed
+    - pattern:
+        context: "try { work(); } catch (e) { }"
+        selector: catch_clause
+        strictness: relaxed
+    # `catch (e: unknown)` / `catch (e: any)` — the annotation is an extra named
+    # node, so the untyped pattern above does not cover it.
+    - pattern:
+        context: "try { work(); } catch (e: unknown) { }"
+        selector: catch_clause
+        strictness: relaxed

@@ -1,3 +1,9 @@
+# ── rule body adopted from faceless-photo-lib `no-instanceof-map-set` (wave 2 triage) ──
+# The two rules were duplicates; the faceless implementation is strictly better,
+# so the canon id keeps its message and takes that body. Why it is better here:
+# the old patterns named only Map and Set; WeakMap and WeakSet have exactly the
+# same cross-realm failure and were invisible.
+#
 id: instanceof-map-set
 language: typescript
 severity: error
@@ -6,6 +12,11 @@ message: |
   loses its runtime type. Duck-type capabilities instead, or use a typed accessor.
   See defensive-errors Rule 3 and Rule 4b.
 rule:
-  any:
-    - pattern: "$X instanceof Map"
-    - pattern: "$X instanceof Set"
+  kind: binary_expression
+  all:
+    - has:
+        field: operator
+        regex: "^instanceof$"
+    - has:
+        field: right
+        regex: "^(Map|Set|WeakMap|WeakSet)$"

@@ -32,6 +32,11 @@ on:
         required: false
         type: boolean
         default: false
+      guardrails_cmd:
+        description: "how to invoke the CLI; the default resolves the installed dependency's bin. Override only for unusual layouts (this repo's selftest uses `node dist/cli.js` — pnpm does not link a package's own bin)"
+        required: false
+        type: string
+        default: "pnpm exec guardrails"
       tool_versions:
         description: ".tool-versions content for the runner toolchain"
         required: false
@@ -59,16 +64,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: verify-diff (added-lines ratchet)
-        run: pnpm exec guardrails verify-diff ${{ inputs.base != '' && format('--base {0}', inputs.base) || '' }}
+        run: ${{ inputs.guardrails_cmd }} verify-diff ${{ inputs.base != '' && format('--base {0}', inputs.base) || '' }}
 
       - name: metrics ratchet (when baseline present)
         run: |
           if [ -f .guardrails/metrics.json ]; then
-            pnpm exec guardrails metrics --check
+            ${{ inputs.guardrails_cmd }} metrics --check
           else
             echo "::notice title=guardrails metrics::no baseline at .guardrails/metrics.json — metrics ratchet SKIPPED. Create one with 'guardrails metrics --update-baseline' and commit it."
           fi
 
       - name: leaks gate
         if: ${{ inputs.leaks }}
-        run: pnpm exec guardrails leaks .
+        run: ${{ inputs.guardrails_cmd }} leaks .

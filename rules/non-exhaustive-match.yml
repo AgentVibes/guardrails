@@ -1,3 +1,10 @@
+# ── rule body adopted from faceless-photo-lib `ts-pattern-prefer-exhaustive` (wave 2 triage) ──
+# The two rules were duplicates; the faceless implementation is strictly better,
+# so the canon id keeps its message and takes that body. Why it is better here:
+# the old `pattern: $X.otherwise($$$)` fired on ANY `.otherwise()` method, not just
+# a ts-pattern chain — a false-positive class. Anchoring to a `match()` chain
+# removes it. Measured: +1 finding, 0 lost.
+#
 id: non-exhaustive-match
 language: typescript
 severity: warning
@@ -6,4 +13,22 @@ message: |
   new union variant becomes a compile error everywhere it's branched on.
   See defensive-errors Rule 2 and pattern-matching skill.
 rule:
-  pattern: $X.otherwise($$$)
+  all:
+    - kind: call_expression
+      has:
+        field: function
+        kind: identifier
+        regex: "^match$"
+    - inside:
+        stopBy:
+          not:
+            any:
+              - kind: member_expression
+              - kind: call_expression
+        kind: call_expression
+        has:
+          field: function
+          kind: member_expression
+          has:
+            field: property
+            regex: "^otherwise$"
