@@ -55,6 +55,26 @@ where the outcome is recorded twice (loading flag + second outcome/payload
 field), while the metric also counts lone boolean progress-flag declarations
 (`loading = false` class fields) — the wider Resource<T> migration target.
 
+## Leak gate
+
+`guardrails leaks [paths]` is the public/private boundary gate: it scans every
+text file for private-infrastructure markers and credential patterns (list in
+`src/leakPatterns.ts` — the one file allowed to hold them), runs gitleaks when
+available, and exits 1 on any hit. This repo runs it against itself in
+`pnpm check` and CI, so the public package can never ship a hostname of the
+topology it deploys to. Reuse it verbatim in any public repo's gate.
+
+## Deploy plugins
+
+`guardrails deploy [args…]` is an extension point, not a deployer: the public
+CLI resolves a plugin — `plugin = "<npm name>"` under `[deploy]` in
+`.agentvibes/project.toml`, or a single `guardrails-plugin-*` dependency — and
+hands it the args plus the `[deploy]` table. A plugin exports (default or
+named `plugin`) an object `{ name, deploy(args, context) }`; the contract type
+ships as `@agentvibes/guardrails/plugin`. All topology facts (hosts, orgs,
+registries, SSO) live in private plugin packages; `guardrails leaks` enforces
+that this package contains none.
+
 ## Presets
 
 ```jsonc

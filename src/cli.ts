@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { match } from "ts-pattern";
+import { runDeploy } from "./deploy.js";
 import { runDoctor } from "./doctor.js";
 import { runInit } from "./init.js";
+import { runLeaks } from "./leaks.js";
 import { runMetrics } from "./metrics.js";
 import { ToolMissingError } from "./toolResolve.js";
 import { runVerify } from "./verify.js";
@@ -26,11 +28,20 @@ Usage:
                                       baseline (2% hysteresis); --snapshot appends
                                       a JSONL trend row; --baseline <path> overrides
 
+  guardrails leaks [paths]            public/private boundary gate: scan for
+                                      private-infrastructure markers and token
+                                      patterns (+ gitleaks when available);
+                                      exit 1 on any hit
+  guardrails deploy [args...]         hand off to the project's deploy plugin
+                                      (guardrails-plugin-* dep, or [deploy]
+                                      plugin= in .agentvibes/project.toml);
+                                      the public CLI carries no topology
+
 All subcommands accept --json.
 Exit codes: 0 ok · 1 findings/regression · 2 usage, missing tool, or missing baseline
 `;
 
-function main(argv: string[]): number {
+async function main(argv: string[]): Promise<number> {
   const args = [...argv];
   const json = args.includes("--json");
   const filtered = args.filter((a) => a !== "--json");
@@ -81,6 +92,8 @@ function main(argv: string[]): number {
     .with("metrics", () =>
       runMetrics({ targets: filtered, json, check, updateBaseline, force, snapshot, baselinePath }),
     )
+    .with("leaks", () => runLeaks(filtered, json))
+    .with("deploy", () => runDeploy(filtered, json))
     .otherwise(() => {
       console.error(`guardrails: unknown subcommand '${command}'\n`);
       console.error(USAGE);
@@ -89,7 +102,7 @@ function main(argv: string[]): number {
 }
 
 try {
-  process.exit(main(process.argv.slice(2)));
+  process.exit(await main(process.argv.slice(2)));
 } catch (err) {
   if (err instanceof ToolMissingError) {
     console.error(`guardrails: ${err.message}`);
