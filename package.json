@@ -33,13 +33,14 @@
     "format": "biome check --write .",
     "test:rules": "node dist/testRules.js",
     "test:gate": "node dist/gateRed.js",
-    "check": "pnpm build && pnpm lint && pnpm test:rules && pnpm test:gate"
+    "check": "pnpm build && pnpm lint && pnpm test:rules && pnpm test:gate && pnpm test:metrics",
+    "test:metrics": "node dist/metricsCycle.js"
   },
   "dependencies": {
-    "ts-pattern": "^5.6.2"
+    "ts-pattern": "^5.6.2",
+    "typescript": "^5.7.3"
   },
   "devDependencies": {
-    "typescript": "^5.7.3",
     "@types/node": "^22.13.0"
   },
   "engines": {

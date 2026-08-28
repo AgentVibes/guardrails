@@ -18,10 +18,16 @@ Usage:
   guardrails doctor                   tool versions, ruleset SHA, config discovery
   guardrails init                     write repo stubs: sgconfig.yml, biome.json,
                                       [stack] in .agentvibes/project.toml
-  guardrails metrics                  not implemented yet (exit 3); ships separately
+  guardrails metrics [paths...]       per-component/file/project metrics; with
+                                      --check compares GATED metrics against the
+                                      committed baseline (.guardrails/metrics.json)
+                                      and exits 1 on any regression;
+                                      --update-baseline [--force] tightens the
+                                      baseline (2% hysteresis); --snapshot appends
+                                      a JSONL trend row; --baseline <path> overrides
 
 All subcommands accept --json.
-Exit codes: 0 ok · 1 findings · 2 usage or missing tool · 3 not implemented
+Exit codes: 0 ok · 1 findings/regression · 2 usage, missing tool, or missing baseline
 `;
 
 function main(argv: string[]): number {
@@ -35,16 +41,36 @@ function main(argv: string[]): number {
     return command === undefined ? 2 : 0;
   }
 
-  let base: string | undefined;
-  const baseIdx = filtered.indexOf("--base");
-  if (baseIdx >= 0) {
-    base = filtered[baseIdx + 1];
-    if (base === undefined) {
-      console.error("guardrails: --base requires a ref argument");
-      return 2;
-    }
-    filtered.splice(baseIdx, 2);
+  const takeValueFlag = (flag: string): string | undefined | null => {
+    const idx = filtered.indexOf(flag);
+    if (idx < 0) return undefined;
+    const value = filtered[idx + 1];
+    // ast-grep-ignore: silent-default-return -- deliberate tri-state, not a fallback: null means "flag present but value missing" and every caller turns it into a usage error
+    if (value === undefined) return null;
+    filtered.splice(idx, 2);
+    return value;
+  };
+  const takeBoolFlag = (flag: string): boolean => {
+    const idx = filtered.indexOf(flag);
+    if (idx < 0) return false;
+    filtered.splice(idx, 1);
+    return true;
+  };
+
+  const base = takeValueFlag("--base");
+  if (base === null) {
+    console.error("guardrails: --base requires a ref argument");
+    return 2;
   }
+  const baselinePath = takeValueFlag("--baseline");
+  if (baselinePath === null) {
+    console.error("guardrails: --baseline requires a path argument");
+    return 2;
+  }
+  const check = takeBoolFlag("--check");
+  const updateBaseline = takeBoolFlag("--update-baseline");
+  const force = takeBoolFlag("--force");
+  const snapshot = takeBoolFlag("--snapshot");
 
   // ast-grep-ignore: non-exhaustive-match -- `command` is arbitrary CLI input (open string), not a closed union; the otherwise arm IS the unknown-subcommand error path
   return match(command)
@@ -52,7 +78,9 @@ function main(argv: string[]): number {
     .with("verify-diff", () => runVerifyDiff(base, json))
     .with("doctor", () => runDoctor(json))
     .with("init", () => runInit(json))
-    .with("metrics", () => runMetrics(json))
+    .with("metrics", () =>
+      runMetrics({ targets: filtered, json, check, updateBaseline, force, snapshot, baselinePath }),
+    )
     .otherwise(() => {
       console.error(`guardrails: unknown subcommand '${command}'\n`);
       console.error(USAGE);

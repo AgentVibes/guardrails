@@ -26,7 +26,12 @@ All subcommands accept `--json`.
 | `guardrails verify-diff [--base R]` | ratchet: error-tier findings on lines your diff ADDED vs merge-base; falls back to whole-file, then whole-tree — never to silence | 1 on new findings only |
 | `guardrails doctor` | tool versions + resolution route, ruleset SHA, config discovery | 1 if a tool is missing |
 | `guardrails init` | writes `sgconfig.yml`, `biome.json` (extends the preset), and a detected-and-materialized `[stack]` in `.agentvibes/project.toml` | 0 |
-| `guardrails metrics` | not implemented yet — ships as its own issue | always 3 |
+| `guardrails metrics [paths]` | per-component (loc, hooks, props, observer, JSX depth, branching), per-file (sloc, context-cost) and per-project metrics; `--check` compares the GATED set against the committed `.guardrails/metrics.json` baseline (recomputes facts, never trusts the file); `--update-baseline` tightens it (2% hysteresis, never loosens without `--force`); `--snapshot` appends a JSONL trend row | 1 on ratchet regression, 2 when `--check` finds no baseline |
+
+Gated (ratchet, lower = better): p90 component_loc, useState density,
+inline-map-row count, p90 context-cost, runInAction count, async-in-store,
+new-Map-in-store, reactions total, loading-boolean shapes. Everything else is
+observe-only.
 
 ## Presets
 
