@@ -163,6 +163,15 @@ that this package contains none.
   `rules/`; the eight that remain are repo-local by decision, with the reason
   for each recorded in `candidates/README.md`. Still loaded nowhere.
 
+Per-repo severity RAISE: a repo that held a rule stricter than the canon keeps
+its gate via `[severity]` in `.agentvibes/project.toml`
+(`zod-optional-nullable = "error"`) — applied through ast-grep's native
+`--error=<rule-id>` in verify, verify-diff and the post-edit hook, so no
+same-id rule fork is ever needed. Raise-only: downgrades and unknown rule ids
+are refused (exit 2); weakening has its own sanctioned homes (warn-tier biome
+deviation, `[verify] exclude` for vendored trees, justified per-line
+`ast-grep-ignore`).
+
 ## Repo-local extra rules
 
 A rule that encodes ONE repo's convention does not belong in the canon — but it

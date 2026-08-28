@@ -12,9 +12,11 @@ export function readTomlTable(path: string, table: string): Record<string, strin
       continue;
     }
     if (!inTable || line === "" || line.startsWith("#")) continue;
-    const m = line.match(/^([A-Za-z0-9_-]+)\s*=\s*"([^"]*)"/);
-    const key = m?.[1];
-    const value = m?.[2];
+    // bare or quoted key ('zod-optional-nullable' is a valid bare key, but
+    // quoted spellings must read identically)
+    const m = line.match(/^(?:"([^"]+)"|([A-Za-z0-9_-]+))\s*=\s*"([^"]*)"/);
+    const key = m?.[1] ?? m?.[2];
+    const value = m?.[3];
     if (key !== undefined && value !== undefined) out[key] = value;
   }
   return out;

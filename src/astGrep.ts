@@ -24,14 +24,22 @@ export interface AstGrepRow {
 }
 
 /** Run `ast-grep scan -c <config> --json` and return structured matches. */
-export function scan(configPath: string, targets: string[]): AstGrepRow[] {
+export function scan(
+  configPath: string,
+  targets: string[],
+  extraArgs: string[] = [],
+): AstGrepRow[] {
   const tool = resolveTool("ast-grep");
   const [cmd, ...prefix] = tool.argv;
   if (cmd === undefined) throw new Error("empty ast-grep argv");
-  const res = spawnSync(cmd, [...prefix, "scan", "-c", configPath, "--json", ...targets], {
-    encoding: "utf8",
-    maxBuffer: 256 * 1024 * 1024,
-  });
+  const res = spawnSync(
+    cmd,
+    [...prefix, "scan", "-c", configPath, ...extraArgs, "--json", ...targets],
+    {
+      encoding: "utf8",
+      maxBuffer: 256 * 1024 * 1024,
+    },
+  );
   if (res.error) throw res.error;
   const out = res.stdout.trim();
   if (out === "") return [];
@@ -55,8 +63,12 @@ export function scan(configPath: string, targets: string[]): AstGrepRow[] {
 }
 
 /** Reportable (error/warning) rule findings, dropping marker/hint tiers. */
-export function scanFindings(configPath: string, targets: string[]): Finding[] {
-  return scan(configPath, targets)
+export function scanFindings(
+  configPath: string,
+  targets: string[],
+  extraArgs: string[] = [],
+): Finding[] {
+  return scan(configPath, targets, extraArgs)
     .filter((r) => r.severity === "error" || r.severity === "warning")
     .map((r) => ({
       rule: r.ruleId,

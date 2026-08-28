@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, relative } from "node:path";
 import { type Finding, formatFinding } from "./findings.js";
 import { addedLines, gitRoot, resolveMergeBase } from "./gitDiff.js";
+import { severityRaiseArgs } from "./severity.js";
 import { collectVerifyFindings } from "./verify.js";
 import { verifyExcludeRe } from "./verifyDiff.js";
 
@@ -94,7 +95,16 @@ export function runHookPostedit(): number {
     return 0;
   }
 
-  let findings: Finding[] = collectVerifyFindings([file]);
+  // [severity] raises apply here too; a MISCONFIGURED table must not fail the
+  // edit (hooks never block on their own defects) — the raise is skipped and
+  // verify/verify-diff will fail loudly on the same config in CI.
+  let severityArgs: string[] = [];
+  try {
+    severityArgs = severityRaiseArgs(repoRoot ?? dirname(file));
+  } catch {
+    severityArgs = [];
+  }
+  let findings: Finding[] = collectVerifyFindings([file], severityArgs);
 
   const lines = changedLines(tool, file);
   if (lines !== undefined) {

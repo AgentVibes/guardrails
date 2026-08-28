@@ -4,6 +4,7 @@ import { scanFindings } from "./astGrep.js";
 import { type Finding, formatFinding } from "./findings.js";
 import { addedLines, changedFiles, gitRoot, resolveMergeBase } from "./gitDiff.js";
 import { rulesConfig } from "./packagePaths.js";
+import { SeverityConfigError, severityRaiseArgs } from "./severity.js";
 import { structureFindings } from "./structure.js";
 import { readTomlTable } from "./tomlTable.js";
 
@@ -94,6 +95,16 @@ function planFor(rung: Rung): Plan {
 }
 
 export function runVerifyDiff(base: string | undefined, json: boolean): number {
+  let severityArgs: string[];
+  try {
+    severityArgs = severityRaiseArgs(process.cwd());
+  } catch (err) {
+    if (err instanceof SeverityConfigError) {
+      console.error(`guardrails verify-diff: ${err.message}`);
+      return 2;
+    }
+    throw err;
+  }
   const plan = planFor(resolveRung(process.cwd(), base));
   const exclude = verifyExcludeRe(process.cwd());
   if (exclude !== undefined && plan.files !== undefined) {
@@ -108,7 +119,7 @@ export function runVerifyDiff(base: string | undefined, json: boolean): number {
     return 0;
   }
 
-  const gated = [...scanFindings(rulesConfig, targets), ...structureFindings(targets)]
+  const gated = [...scanFindings(rulesConfig, targets, severityArgs), ...structureFindings(targets)]
     .filter((f) => f.severity === "error")
     .filter(plan.keep);
 

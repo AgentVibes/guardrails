@@ -1,12 +1,13 @@
 import { scanFindings } from "./astGrep.js";
 import { type Finding, formatFinding, hasErrors } from "./findings.js";
 import { rulesConfig } from "./packagePaths.js";
+import { SeverityConfigError, severityRaiseArgs } from "./severity.js";
 import { structureFindings } from "./structure.js";
 import { textGrepFindings } from "./textGrep.js";
 
-export function collectVerifyFindings(targets: string[]): Finding[] {
+export function collectVerifyFindings(targets: string[], severityArgs: string[] = []): Finding[] {
   return [
-    ...scanFindings(rulesConfig, targets),
+    ...scanFindings(rulesConfig, targets, severityArgs),
     ...textGrepFindings(targets),
     ...structureFindings(targets),
   ];
@@ -14,7 +15,17 @@ export function collectVerifyFindings(targets: string[]): Finding[] {
 
 export function runVerify(targets: string[], json: boolean): number {
   const paths = targets.length > 0 ? targets : ["."];
-  const findings = collectVerifyFindings(paths);
+  let severityArgs: string[];
+  try {
+    severityArgs = severityRaiseArgs(process.cwd());
+  } catch (err) {
+    if (err instanceof SeverityConfigError) {
+      console.error(`guardrails verify: ${err.message}`);
+      return 2;
+    }
+    throw err;
+  }
+  const findings = collectVerifyFindings(paths, severityArgs);
   const errors = findings.filter((f) => f.severity === "error").length;
   const warnings = findings.filter((f) => f.severity === "warning").length;
 
