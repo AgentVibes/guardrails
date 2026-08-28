@@ -18,10 +18,16 @@ PATH, falls back to `mise x <tool>@<pin>` using the pins in this package's
 
 Installing straight from git (`github:AgentVibes/guardrails#<sha>`) works —
 the `prepare` script builds `dist/` at install time — but pnpm blocks
-lifecycle scripts of git-hosted deps by default: add an `allowBuilds` entry
-for the exact resolved spec to the consuming repo's `pnpm-workspace.yaml`
-(`"@agentvibes/guardrails@github:AgentVibes/guardrails#<sha>": true`), or
-install from the registry once the package is published.
+lifecycle scripts of git-hosted deps by default, and the unblock knob moved
+between pnpm versions:
+
+| pnpm | where to allow the build |
+|---|---|
+| 10.0–10.4 | `package.json` → `pnpm.onlyBuiltDependencies: ["@agentvibes/guardrails"]` |
+| 10.5+ | `pnpm-workspace.yaml` → `onlyBuiltDependencies: ["@agentvibes/guardrails"]` |
+| 11+ | `pnpm-workspace.yaml` → `allowBuilds` keyed by the exact resolved spec |
+
+(or install from the registry once the package is published).
 
 ## Commands
 
@@ -71,7 +77,16 @@ jobs:
 It checks out with full history, installs the pinned toolchain via mise, runs
 `pnpm install --frozen-lockfile`, then BLOCKING `guardrails verify-diff` and
 `guardrails metrics --check` (skipped with a loud `::notice::` when the repo
-has no `.guardrails/metrics.json` baseline — never silently). `@v0` is a
+has no `.guardrails/metrics.json` baseline — never silently).
+
+Workspaces that reach outside their repo (`link:../<repo>/...` overrides,
+`../../<org>/<repo>` workspace globs) pass
+`sibling_repos: "owner/repo owner2/repo2"`: the gate then checks the main
+repo out at `repos/<org>/<repo>` depth and shallow-clones each sibling at its
+own `repos/<owner>/<name>`, reproducing a `gits/<org>/<repo>` disk layout so
+the relative escapes resolve. Private siblings additionally need
+`secrets: { sibling_token: <PAT with read on them> }` — the default job token
+cannot reach other repos. `@v0` is a
 moving tag that follows validated releases, actions-style; pin `@<commit-sha>`
 if your repo wants immutable supply-chain refs.
 

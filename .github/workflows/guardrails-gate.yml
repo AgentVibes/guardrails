@@ -47,7 +47,16 @@ on:
           ast-grep 0.45.2
           gitleaks 8.30.1
       sibling_repos:
-        description: "space-separated owner/repo list to clone NEXT TO the checkout (../<repo-name>) before install — for workspaces whose overrides use `link:../<repo>/...` paths. Private siblings need the sibling_token secret (the default job token only reaches the current repo)."
+        description: >-
+          space-separated owner/repo list checked out at gits-layout positions
+          before install, for workspaces that reach OUTSIDE their repo
+          (link:../<repo>/... overrides, ../../<org>/<repo> workspace globs).
+          When set, the MAIN checkout moves to repos/<org>/<repo> and every
+          sibling lands at repos/<owner>/<name>, reproducing the
+          ~/gits/github/<org>/<repo> layout — so both `../components`
+          (same-org sibling) and `../../<other-org>/<repo>` resolve. Private
+          siblings need the sibling_token secret (the default job token only
+          reaches the current repo).
         required: false
         type: string
         default: ""
@@ -59,37 +68,44 @@ on:
 jobs:
   gate:
     runs-on: ubuntu-latest
+    env:
+      # With siblings, the main repo sits at gits-layout depth so relative
+      # escapes resolve; without, it stays at the workspace root as always.
+      MAIN_DIR: ${{ inputs.sibling_repos != '' && format('repos/{0}', github.repository) || '.' }}
     steps:
       # Full history: verify-diff gates ADDED lines vs merge-base; a shallow
       # checkout has no merge-base and would degrade the ratchet to whole-file.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          path: ${{ inputs.sibling_repos != '' && format('repos/{0}', github.repository) || '.' }}
 
       - uses: jdx/mise-action@v2
         with:
           tool_versions: ${{ inputs.tool_versions }}
 
-      # `link:../sibling/...` overrides resolve one level ABOVE the checkout,
-      # which actions/checkout cannot target — so plain clones. Shallow: the
-      # gate only needs the trees to exist for install to succeed.
-      - name: clone sibling repos
+      # Shallow clones at repos/<owner>/<name>: the gate only needs the trees
+      # to exist for install to succeed. Plain git clone rather than
+      # actions/checkout so one token covers N repos.
+      - name: clone sibling repos (gits layout)
         if: ${{ inputs.sibling_repos != '' }}
         env:
           SIBLING_TOKEN: ${{ secrets.sibling_token || github.token }}
         run: |
           for repo in ${{ inputs.sibling_repos }}; do
-            name="${repo##*/}"
-            echo "cloning $repo -> ../$name"
-            git clone --depth=1 "https://x-access-token:${SIBLING_TOKEN}@github.com/${repo}.git" "../${name}"
+            echo "cloning $repo -> repos/$repo"
+            git clone --depth=1 "https://x-access-token:${SIBLING_TOKEN}@github.com/${repo}.git" "repos/${repo}"
           done
 
       - run: pnpm install --frozen-lockfile
+        working-directory: ${{ env.MAIN_DIR }}
 
       - name: verify-diff (added-lines ratchet)
         run: ${{ inputs.guardrails_cmd }} verify-diff ${{ inputs.base != '' && format('--base {0}', inputs.base) || '' }}
+        working-directory: ${{ env.MAIN_DIR }}
 
       - name: metrics ratchet (when baseline present)
+        working-directory: ${{ env.MAIN_DIR }}
         run: |
           if [ -f .guardrails/metrics.json ]; then
             ${{ inputs.guardrails_cmd }} metrics --check
@@ -100,3 +116,4 @@ jobs:
       - name: leaks gate
         if: ${{ inputs.leaks }}
         run: ${{ inputs.guardrails_cmd }} leaks .
+        working-directory: ${{ env.MAIN_DIR }}
