@@ -27,6 +27,14 @@
 # `rootStore` included. That needs a different `files:` glob, which ast-grep
 # scopes per rule file, so it lives in `view-imports-store.yml`.
 id: direct-store-import
+# A screen MUST import its page-store class — `usePageStore(() => new
+# GalleryPageStore(rootStore, slug))` is report §8's prescribed shape — so this
+# rule does not apply to files the repo declares as screens via
+# `[verify] screens` in .agentvibes/project.toml. Without that declaration
+# nothing changes and screens keep needing a justified suppression
+# (is-7067a0b8).
+metadata:
+  appliesTo: not-screens
 language: tsx
 severity: error
 files:
