@@ -60,6 +60,17 @@ on:
         required: false
         type: string
         default: ""
+      runner_labels:
+        description: >-
+          JSON array of labels selecting the runner for the gate job. Defaults
+          to the house self-hosted runner on the hzded dev VM: GitHub-hosted
+          minutes run out every month on the free plan (2000/mo, exhausted
+          2026-08-28 at 08:45Z, which killed CI org-wide), and self-hosted
+          minutes are not metered at all. Pass '["ubuntu-latest"]' to go back
+          to GitHub-hosted runners for a given caller.
+        required: false
+        type: string
+        default: '["self-hosted","hzded"]'
     secrets:
       sibling_token:
         description: "token with read access to the sibling_repos; falls back to the job token (sufficient only for public siblings)"
@@ -67,7 +78,7 @@ on:
 
 jobs:
   gate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
     env:
       # With siblings, the main repo sits at gits-layout depth so relative
       # escapes resolve; without, it stays at the workspace root as always.
