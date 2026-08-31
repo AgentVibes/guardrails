@@ -78,6 +78,11 @@ on:
 jobs:
   gate:
     runs-on: ${{ fromJSON(inputs.runner_labels) }}
+    # See ci.yml: bounds execution, not queueing. Worth more here than there —
+    # this job runs in SOMEONE ELSE'S repo, on whatever runner their labels
+    # select, and a wedged gate holding a shared slot is their outage, not this
+    # repo's.
+    timeout-minutes: 45
     env:
       # With siblings, the main repo sits at gits-layout depth so relative
       # escapes resolve; without, it stays at the workspace root as always.
