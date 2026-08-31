@@ -43,8 +43,14 @@ jobs:
             echo "::notice title=house leaks::HOUSE_LEAKS_REPO/TOKEN secrets unset — house-marker scan SKIPPED (generic scan still ran)."
             exit 0
           fi
-          git clone --depth=1 "https://x-access-token:${HOUSE_LEAKS_TOKEN}@github.com/${HOUSE_LEAKS_REPO}.git" /tmp/house-leaks
-          node dist/cli.js leaks . --patterns /tmp/house-leaks/leaks.txt
+          # $RUNNER_TEMP, not /tmp: a self-hosted runner reuses the same
+          # machine across jobs, so /tmp/house-leaks survives and the clone
+          # fails with "destination path already exists". RUNNER_TEMP is
+          # recreated per job on every runner type.
+          dest="$RUNNER_TEMP/house-leaks"
+          rm -rf "$dest"
+          git clone --depth=1 "https://x-access-token:${HOUSE_LEAKS_TOKEN}@github.com/${HOUSE_LEAKS_REPO}.git" "$dest"
+          node dist/cli.js leaks . --patterns "$dest/leaks.txt"
 
       - name: pack must succeed
         run: pnpm pack
