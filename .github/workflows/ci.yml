@@ -11,11 +11,11 @@ on:
 
 jobs:
   check:
-    # Self-hosted on the hzded dev VM. GitHub-hosted minutes are metered and the
-    # free-plan allowance runs out mid-month (MerkleApp hit the 2000-minute wall
-    # on 2026-08-28 and every job in the org stopped starting); self-hosted
-    # minutes are not metered. Swap back to ubuntu-latest if this VM is down.
-    runs-on: [self-hosted, hzded]
+    # Self-hosted Linux runner. Hosted minutes are metered and the free-plan
+    # allowance runs out mid-month; when it does, jobs stop being dispatched
+    # entirely (they end in seconds having run zero steps). Self-hosted minutes
+    # are not metered. Swap to ubuntu-latest if no self-hosted runner is up.
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
 
