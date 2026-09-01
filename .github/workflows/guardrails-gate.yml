@@ -70,7 +70,24 @@ on:
         required: false
         type: string
         default: '["self-hosted","linux","x64"]'
+      npm_auth_registry:
+        description: >-
+          Registry path to authenticate the install against, in npmrc form and
+          WITHOUT a scheme — e.g. "//registry.example.com/api/packages/acme/npm/".
+          Supplied by the caller on purpose: this workflow lives in a public
+          repository, so a registry host hardcoded here would be a house detail
+          published with the package. Leave unset (the default) and no auth is
+          configured, which is what every consumer with only public dependencies
+          wants. Set it together with the npm_auth_token secret; setting one
+          without the other fails the job rather than proceeding into a 401 that
+          looks like a broken lockfile.
+        required: false
+        type: string
+        default: ""
     secrets:
+      npm_auth_token:
+        description: "token for npm_auth_registry; required if and only if npm_auth_registry is set"
+        required: false
       sibling_token:
         description: "token with read access to the sibling_repos; falls back to the job token (sufficient only for public siblings)"
         required: false
@@ -111,6 +128,32 @@ jobs:
             echo "cloning $repo -> repos/$repo"
             git clone --depth=1 "https://x-access-token:${SIBLING_TOKEN}@github.com/${repo}.git" "repos/${repo}"
           done
+
+      # Private-scoped dependencies. Without this the install 401s and every
+      # gate step after it is SKIPPED — which reads as "the gate ran and found
+      # nothing", the failure this whole toolkit exists to prevent. Measured on
+      # a consumer: merkle-substrate's gate had 54 runs with zero steps and one
+      # run that reached here and died at ERR_PNPM_FETCH_401, so the gate had
+      # never verified a line since adoption.
+      #
+      # $RUNNER_TEMP, never $HOME: on a self-hosted runner HOME is shared and
+      # reused between jobs, so an npmrc written there outlives the job that
+      # wrote it and leaks into the next one.
+      #
+      # $GITHUB_ENV rather than a job-level env: a job-level value would point
+      # the toolchain setup at a file that does not exist yet.
+      - name: configure private registry auth
+        if: ${{ inputs.npm_auth_registry != '' }}
+        env:
+          NPM_AUTH_TOKEN: ${{ secrets.npm_auth_token }}
+        run: |
+          if [ -z "${NPM_AUTH_TOKEN}" ]; then
+            echo "::error title=guardrails gate::npm_auth_registry is set but the npm_auth_token secret is empty. Refusing to install unauthenticated — a 401 here would skip every gate step and read as a clean run." >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s:_authToken=%s\n' "${{ inputs.npm_auth_registry }}" "${NPM_AUTH_TOKEN}" > "$RUNNER_TEMP/.npmrc-guardrails-gate"
+          echo "NPM_CONFIG_USERCONFIG=$RUNNER_TEMP/.npmrc-guardrails-gate" >> "$GITHUB_ENV"
 
       - run: pnpm install --frozen-lockfile
         working-directory: ${{ env.MAIN_DIR }}
