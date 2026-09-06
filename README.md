@@ -255,9 +255,26 @@ ruleDirs:
   - .ast-grep/rules          # repo-local extras
 ```
 
-Both directories load together and findings print their own rule id, so a local
-rule suppresses under its own name. Verified: a canon rule and a repo-local rule
-firing side by side in one `ast-grep scan -c sgconfig.yml` run.
+`guardrails verify` and `verify-diff` scan with **both** configs — the bundled
+canon and, when the working directory has one, the repo's own `sgconfig.yml` —
+and merge the findings, deduped by rule + file + line (the repo config almost
+always lists the canon `ruleDir` too, so every canon finding otherwise arrives
+twice). Two directions matter and both are pinned by `pnpm test:repo-rules`:
+
+- Repo-local rules run under `verify`, gate on error tier, and print their own
+  rule id, so a local rule suppresses under its own name. In 0.1.0 they did
+  not run at all — `verify` read only the package's config, and the intranet and
+  DataSpool each added a bare `ast-grep scan -c sgconfig.yml` as a second gate
+  stage to work around it.
+- A repo whose `sgconfig.yml` forgets the canon `ruleDir` does **not** lose the
+  canon. The canon is always scanned; the repo's config is additive.
+
+A repo `sgconfig.yml` that ast-grep cannot load (unreadable `ruleDir`, unparsable
+YAML) exits 2 with ast-grep's own reason. It never reads as "no findings" — a
+rule set that failed to load reports exactly what a rule set with nothing to find
+reports, and that silence is the failure this package exists to remove.
+`guardrails doctor` lists the `ruleDirs` the repo config declares, so a repo that
+believes it has local rules can see whether the config actually names them.
 
 Keep local ids distinct from canon ids — ast-grep refuses to load two rules with
 the same id, and a repo-local override of a canon rule is a silent fork rather

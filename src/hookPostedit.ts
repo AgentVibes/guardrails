@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, relative } from "node:path";
+import { AstGrepConfigError } from "./astGrep.js";
 import { type Finding, formatFinding } from "./findings.js";
 import { addedLines, gitRoot, resolveMergeBase } from "./gitDiff.js";
 import { severityRaiseArgs } from "./severity.js";
@@ -104,7 +105,22 @@ export function runHookPostedit(): number {
   } catch {
     severityArgs = [];
   }
-  let findings: Finding[] = collectVerifyFindings([file], severityArgs);
+  // The repo root, not the hook's cwd, is what decides which `sgconfig.yml`
+  // adds repo-local rules — an agent editing a monorepo package is rarely
+  // sitting at the root the config belongs to.
+  let findings: Finding[];
+  try {
+    findings = collectVerifyFindings([file], severityArgs, repoRoot ?? dirname(file));
+  } catch (err) {
+    if (err instanceof AstGrepConfigError) {
+      // Same self-defect rule as the [severity] table above: a repo config
+      // ast-grep cannot load must not fail the edit. It is reported once here
+      // and fails loudly in verify/verify-diff, which is where it gates.
+      console.error(`guardrails hook-postedit: ${err.message}`);
+      return 0;
+    }
+    throw err;
+  }
 
   const lines = changedLines(tool, file);
   if (lines !== undefined) {

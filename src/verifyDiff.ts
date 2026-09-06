@@ -1,9 +1,10 @@
 import { join, relative } from "node:path";
 import { match } from "ts-pattern";
-import { scanFindings } from "./astGrep.js";
+import { AstGrepConfigError, scanFindings } from "./astGrep.js";
 import { type Finding, formatFinding } from "./findings.js";
 import { addedLines, changedFiles, gitRoot, resolveMergeBase } from "./gitDiff.js";
 import { rulesConfig } from "./packagePaths.js";
+import { dedupeFindings, ruleConfigs } from "./repoRules.js";
 import { SeverityConfigError, severityRaiseArgs } from "./severity.js";
 import { structureFindings } from "./structure.js";
 import { readTomlTable } from "./tomlTable.js";
@@ -114,10 +115,10 @@ export function runVerifyDiffCollect(cwd: string, base: string | undefined): Ver
     return { rungLabel: plan.rungLabel, filesScanned: 0, violations: [] };
   }
   const targets = plan.files ?? ["."];
-  const violations = [
-    ...scanFindings(rulesConfig, targets, severityArgs),
+  const violations = dedupeFindings([
+    ...ruleConfigs(cwd, rulesConfig).flatMap((c) => scanFindings(c, targets, severityArgs)),
     ...structureFindings(targets),
-  ]
+  ])
     .filter((f) => f.severity === "error")
     .filter(plan.keep);
   return { rungLabel: plan.rungLabel, filesScanned: plan.files?.length ?? -1, violations };
@@ -128,7 +129,7 @@ export function runVerifyDiff(base: string | undefined, json: boolean): number {
   try {
     result = runVerifyDiffCollect(process.cwd(), base);
   } catch (err) {
-    if (err instanceof SeverityConfigError) {
+    if (err instanceof SeverityConfigError || err instanceof AstGrepConfigError) {
       console.error(`guardrails verify-diff: ${err.message}`);
       return 2;
     }

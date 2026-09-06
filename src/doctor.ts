@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { packageRoot, rulesDir, structureRulesDir } from "./packagePaths.js";
+import { declaredRuleDirs } from "./repoRules.js";
 import { pinnedVersion, tryResolveTool } from "./toolResolve.js";
 
 interface ToolReport {
@@ -53,7 +54,17 @@ export function rulesetSha(): string {
 function discoverConfigs(cwd: string): Record<string, string> {
   const found: Record<string, string> = {};
   const sg = join(cwd, "sgconfig.yml");
-  found["sgconfig.yml"] = existsSync(sg) ? "present" : "absent";
+  if (existsSync(sg)) {
+    // Name the ruleDirs, not just the file. `verify` scans with this config IN
+    // ADDITION to the canon (is-f58cd6b4), so what it lists is what the repo
+    // adds on top — and a repo that thinks it has local rules can see here
+    // whether the config actually declares the directory holding them.
+    const dirs = declaredRuleDirs(sg);
+    found["sgconfig.yml"] =
+      dirs.length > 0 ? `present, ruleDirs: ${dirs.join(", ")}` : "present, no ruleDirs declared";
+  } else {
+    found["sgconfig.yml"] = "absent";
+  }
 
   const biomePath = join(cwd, "biome.json");
   if (existsSync(biomePath)) {

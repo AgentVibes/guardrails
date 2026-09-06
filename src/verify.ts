@@ -1,6 +1,7 @@
-import { scanFindings } from "./astGrep.js";
+import { AstGrepConfigError, scanFindings } from "./astGrep.js";
 import { type Finding, formatFinding, hasErrors } from "./findings.js";
 import { rulesConfig } from "./packagePaths.js";
+import { dedupeFindings, ruleConfigs } from "./repoRules.js";
 import {
   dropScreenExempt,
   ScreenScopeError,
@@ -11,12 +12,20 @@ import { SeverityConfigError, severityRaiseArgs } from "./severity.js";
 import { structureFindings } from "./structure.js";
 import { textGrepFindings } from "./textGrep.js";
 
-export function collectVerifyFindings(targets: string[], severityArgs: string[] = []): Finding[] {
-  const findings = [
-    ...scanFindings(rulesConfig, targets, severityArgs),
+export function collectVerifyFindings(
+  targets: string[],
+  severityArgs: string[] = [],
+  cwd: string = process.cwd(),
+): Finding[] {
+  // Canon first, then the repo's own sgconfig.yml when it has one — see
+  // repoRules.ts for why both and not either alone. The repo config normally
+  // lists the canon ruleDir too, so the overlap is deduped rather than
+  // reported twice.
+  const findings = dedupeFindings([
+    ...ruleConfigs(cwd, rulesConfig).flatMap((c) => scanFindings(c, targets, severityArgs)),
     ...textGrepFindings(targets),
     ...structureFindings(targets),
-  ];
+  ]);
   // Applied HERE rather than in `runVerify`, so verify-diff and the hooks get
   // the same scoping: a screen that is legal under `verify` must not be gated
   // by `verify-diff` on the same line.
@@ -31,7 +40,11 @@ export function runVerify(targets: string[], json: boolean): number {
   try {
     findings = collectVerifyFindings(paths, severityRaiseArgs(process.cwd()));
   } catch (err) {
-    if (err instanceof SeverityConfigError || err instanceof ScreenScopeError) {
+    if (
+      err instanceof SeverityConfigError ||
+      err instanceof ScreenScopeError ||
+      err instanceof AstGrepConfigError
+    ) {
       console.error(`guardrails verify: ${err.message}`);
       return 2;
     }

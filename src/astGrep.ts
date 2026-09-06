@@ -11,6 +11,9 @@ interface AstGrepMatch {
   metaVariables?: { single?: Record<string, { text?: string }> };
 }
 
+/** ast-grep could not load a config, so nothing was scanned with it. */
+export class AstGrepConfigError extends Error {}
+
 export interface AstGrepRow {
   ruleId: string;
   file: string;
@@ -42,7 +45,19 @@ export function scan(
   );
   if (res.error) throw res.error;
   const out = res.stdout.trim();
-  if (out === "") return [];
+  // Exit 0 = clean scan, 1 = the scan ran and found error-tier matches (stdout
+  // carries them either way). Everything else means ast-grep never scanned:
+  // 6 is an unreadable ruleDir, 8 an unparsable config. Returning [] there
+  // would report "no findings" for a rule set that never loaded — the exact
+  // silence this package exists to remove. Measured against ast-grep 0.45.2.
+  const status = res.status ?? -1;
+  if (out === "") {
+    if (status === 0) return [];
+    throw new AstGrepConfigError(
+      `ast-grep exited ${status} and scanned nothing with config ${configPath}. ` +
+        `Its output:\n${res.stderr.trim().slice(0, 2000)}`,
+    );
+  }
   let parsed: AstGrepMatch[];
   try {
     parsed = JSON.parse(out) as AstGrepMatch[];

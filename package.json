@@ -35,7 +35,7 @@
     "format": "biome check --write .",
     "test:rules": "node dist/testRules.js",
     "test:gate": "node dist/gateRed.js",
-    "check": "pnpm build && pnpm lint && pnpm test:rules && pnpm test:twins && pnpm test:gate && pnpm test:metrics && pnpm test:init && pnpm test:severity && pnpm test:screens && pnpm test:hooks && pnpm test:iterate && pnpm test:leaks && pnpm leaks",
+    "check": "pnpm build && pnpm lint && pnpm test:rules && pnpm test:twins && pnpm test:repo-rules && pnpm test:gate && pnpm test:metrics && pnpm test:init && pnpm test:severity && pnpm test:screens && pnpm test:hooks && pnpm test:iterate && pnpm test:leaks && pnpm leaks",
     "test:metrics": "node dist/metricsCycle.js",
     "leaks": "node dist/cli.js leaks .",
     "test:leaks": "node dist/leaksRed.js",
@@ -44,7 +44,8 @@
     "test:hooks": "node dist/hookStopTest.js",
     "test:iterate": "node dist/iterateTest.js",
     "test:screens": "node dist/screenScopeTest.js",
-    "test:twins": "node dist/twinCoverageTest.js"
+    "test:twins": "node dist/twinCoverageTest.js",
+    "test:repo-rules": "node dist/repoRulesTest.js"
   },
   "dependencies": {
     "ts-pattern": "^5.6.2",
