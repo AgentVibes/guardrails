@@ -35,6 +35,12 @@
 # Validated against the real pre-fix store.tsx: 1 hit at the exact declaration,
 # 0 on the fixed version, 0 across substrate-app, tg-gallery webapp and
 # agent-workbench web.
+#
+# 2026-09-06 (is-9e66ec5a): the value matcher was widened to accept
+# `as const` / `as <Type>` / `satisfies <Type>` around the literal. This is an
+# error-tier rule, so the widening was measured before landing: 0 new findings
+# in the seven repos that run this gate, and 0 across every repo under
+# ~/gits/github — the only hits corpus-wide are this package's own fixtures.
 id: demo-mode-by-default-ts
 language: typescript
 severity: error
@@ -52,9 +58,19 @@ rule:
     - has:
         field: key
         regex: '^(kind|mode|backend|source|dataSource|driver|adapter|transport|client)$'
+    # The literal, optionally wrapped in `as const` / `as Mode` /
+    # `satisfies Mode` (is-9e66ec5a). Without the tail, `{ kind: "demo" }` was
+    # a finding and `{ kind: "demo" as const }` was not — and `as const` is the
+    # spelling people reach for precisely when the object has no type
+    # annotation to carry the literal type. DataSpool's retired local
+    # `no-fake-defaults` caught it, so adopting the canon had been a coverage
+    # regression; the reviewer sent both gate PRs back over it.
+    #
+    # The leading and trailing `.` are the quote character, so `"demo-ish"`
+    # still does not match: the alternation must be the WHOLE string body.
     - has:
         field: value
-        regex: '^.(demo|mock|fixture|fake|stub|sample|seed).$'
+        regex: '^.(demo|mock|fixture|fake|stub|sample|seed).( +(as|satisfies) +.+)?$'
     - not:
         inside:
           stopBy: end

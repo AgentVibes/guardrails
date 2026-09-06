@@ -300,6 +300,24 @@ const EXPECTATIONS: Expectation[] = [
     hits: 8,
     goodSuffix: "silent-default-return/good.tsx",
   },
+  // ── the `as const` widening (is-9e66ec5a) ─────────────────────────────
+  // `demo-mode-by-default` guards the rule in fake-data.md and had no fixture
+  // at all — nothing executed it. Both arms are asserted now, and the bad
+  // fixture carries the four forms: the annotated one the rule always caught,
+  // plus `as const`, `as <Type>` and `satisfies <Type>`, which it did not.
+  // 4 of the 5 hits per file are the wrapped forms.
+  {
+    rule: "demo-mode-by-default-ts",
+    badSuffix: "demo-mode-by-default/bad.ts",
+    hits: 5,
+    goodSuffix: "demo-mode-by-default/good.ts",
+  },
+  {
+    rule: "demo-mode-by-default",
+    badSuffix: "demo-mode-by-default/bad.tsx",
+    hits: 5,
+    goodSuffix: "demo-mode-by-default/good.tsx",
+  },
 ];
 
 // A file that is deliberately out of scope — same offending code as the bad
