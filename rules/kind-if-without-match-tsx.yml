@@ -1,0 +1,31 @@
+# ── the .tsx half of `kind-if-without-match` ──
+#
+# ast-grep's `typescript` and `tsx` languages are DISJOINT, not nested: a rule
+# at `language: typescript` matches `.ts` and NEVER `.tsx`. `kind-if-without-match`
+# was therefore blind to every React component file. The mechanism, and the
+# three alternatives that were tried and rejected on measurement, are written
+# out once in `catch-empty-tsx.yml`; the short version is that ast-grep has no
+# way to say "both languages", so a twin id per language is the only option.
+#
+# Measured 2026-09-06 across the same five repos: 29 findings in `.tsx`
+# (SiteCraft 1, faceless 2, observatory 6, tg-gallery 2, merkle-substrate 18).
+# `if (x.kind === …)` branching lives in components at least as often as in
+# plain modules, which is precisely where the union grows a variant unnoticed.
+#
+# Keep this file's `rule:` block IDENTICAL to `kind-if-without-match.yml`.
+#
+id: kind-if-without-match-tsx
+language: tsx
+severity: warning
+message: |
+  Discriminated-union branching with if/else silently ignores new variants.
+  Use match($X).with({kind: ...}, ...).exhaustive() from ts-pattern.
+  See defensive-errors Rule 2 and the pattern-matching skill.
+  Suppressing this one needs the id you see above — `ast-grep-ignore: kind-if-without-match-tsx`.
+  `kind-if-without-match` is a DIFFERENT rule (the .ts arm) and does not cover it.
+rule:
+  any:
+    - pattern: "if ($X.kind === $_) $_"
+    - pattern: "if ($X.type === $_) $_"
+    - pattern: "if ($X.status === $_) $_"
+    - pattern: "if ($X._obj === $_) $_"

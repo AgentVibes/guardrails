@@ -1,0 +1,26 @@
+# ── the .tsx half of `json-roundtrip` ──
+#
+# ast-grep's `typescript` and `tsx` languages are DISJOINT, not nested: a rule
+# at `language: typescript` matches `.ts` and NEVER `.tsx`. `json-roundtrip`
+# was therefore blind to every React component file. The mechanism, and the
+# three alternatives that were tried and rejected on measurement, are written
+# out once in `catch-empty-tsx.yml`; the short version is that ast-grep has no
+# way to say "both languages", so a twin id per language is the only option.
+#
+# Measured 2026-09-06 across the same five repos: 0 findings. A clean zero,
+# not a broken one — the rule fires on a known positive in its fixture. Closing
+# a language gap at zero cost is the same call `demo-mode-by-default-ts` made.
+#
+# Keep this file's `rule:` block IDENTICAL to `json-roundtrip.yml`.
+#
+id: json-roundtrip-tsx
+language: tsx
+severity: warning
+message: |
+  JSON.parse(JSON.stringify(x)) loses Maps, Sets, TypedArrays, class instances, circular refs.
+  Use a typed serializer with Zod validation at the boundary.
+  See defensive-errors Rule 5.
+  Suppressing this one needs the id you see above — `ast-grep-ignore: json-roundtrip-tsx`.
+  `json-roundtrip` is a DIFFERENT rule (the .ts arm) and does not cover it.
+rule:
+  pattern: "JSON.parse(JSON.stringify($X))"

@@ -1,0 +1,48 @@
+# ── the .tsx half of `non-exhaustive-match` ──
+#
+# ast-grep's `typescript` and `tsx` languages are DISJOINT, not nested: a rule
+# at `language: typescript` matches `.ts` and NEVER `.tsx`. `non-exhaustive-match`
+# was therefore blind to every React component file. The mechanism, and the
+# three alternatives that were tried and rejected on measurement, are written
+# out once in `catch-empty-tsx.yml`; the short version is that ast-grep has no
+# way to say "both languages", so a twin id per language is the only option.
+#
+# Measured 2026-09-06 across the five repos that consume guardrails
+# (SiteCraftMonorepo 40, faceless-photo-lib 28, agent-session-observatory 18,
+# tg-gallery 47, merkle-substrate 52): 185 `.otherwise()` chains in `.tsx` the
+# `.ts` arm never saw. Adding them was the owner's call — decision D4 in
+# doc-e4526f1a parks the question of banning `.otherwise()` outright, so the
+# owner was asked whether to surface the .tsx half before D4 lands and answered
+# «1» (add the twin now, severity warning) on 2026-09-06, is-8385d5dd.
+#
+# Keep this file's `rule:` block IDENTICAL to `non-exhaustive-match.yml`.
+#
+id: non-exhaustive-match-tsx
+language: tsx
+severity: warning
+message: |
+  `.otherwise()` catches unmatched variants silently. Prefer `.exhaustive()` so adding a
+  new union variant becomes a compile error everywhere it's branched on.
+  See defensive-errors Rule 2 and pattern-matching skill.
+  Suppressing this one needs the id you see above — `ast-grep-ignore: non-exhaustive-match-tsx`.
+  `non-exhaustive-match` is a DIFFERENT rule (the .ts arm) and does not cover it.
+rule:
+  all:
+    - kind: call_expression
+      has:
+        field: function
+        kind: identifier
+        regex: "^match$"
+    - inside:
+        stopBy:
+          not:
+            any:
+              - kind: member_expression
+              - kind: call_expression
+        kind: call_expression
+        has:
+          field: function
+          kind: member_expression
+          has:
+            field: property
+            regex: "^otherwise$"

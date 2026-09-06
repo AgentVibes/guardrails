@@ -1,0 +1,9 @@
+// Every return here MUST be reported by `silent-default-return`.
+export const a = (x?: T) => { if (!x) return null; return use(x) }
+export const b = (x?: T[]) => { if (!x) return []; return x }
+export const c = (x?: number) => { if (!x) return 0; return x }
+export const d = (x?: string) => { if (!x) return ""; return x }
+export const e = (x?: T) => { if (x === undefined) return null; return use(x) }
+export const f = (x?: T[]) => { if (x === undefined) return []; return x }
+export const g = (x?: T) => { if (x == null) return null; return use(x) }
+export const h = (x?: T[]) => { if (x == null) return []; return x }

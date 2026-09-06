@@ -211,6 +211,37 @@ are refused (exit 2); weakening has its own sanctioned homes (warn-tier biome
 deviation, `[verify] exclude` for vendored trees, justified per-line
 `ast-grep-ignore`).
 
+## Rule twins — one rule, two ids
+
+ast-grep's `typescript` and `tsx` languages are **disjoint, not nested**: a rule
+declared `language: typescript` reads `.ts` and never `.tsx`, and vice versa.
+There is no way to say "both" — `language: [typescript, tsx]` fails to parse,
+`languageGlobs` reassigns `.ts` to the tsx language and blinds every remaining
+`typescript` rule (measured corpus-wide: 5 rules dark, 6,094 findings lost
+against 334 gained), and two files sharing an id are refused outright.
+
+So a rule that must run on both is **two files with two ids**: `catch-empty.yml`
+and `catch-empty-tsx.yml`. The trailing `-tsx` is what you suppress with in a
+`.tsx` file, and the finding prints the id, so copying from the output is always
+right. A handful of pairs are spelled the other way round — the tsx arm came
+first and the `.ts` half is the `-ts` suffix (`demo-mode-by-default` +
+`demo-mode-by-default-ts`). Both spellings are one family.
+
+The two arms are one rule wearing two ids, so their `severity`, `files`,
+`ignores`, `utils` and `rule` blocks must stay byte-identical; only `id`,
+`language` and the message differ (the twin names its own suppression id).
+
+**This is enforced, not documented-and-hoped:** `pnpm test:twins`
+(`src/twinCoverageTest.ts`, part of `pnpm check`) fails when a rule family has
+only one arm and no entry in its `EXCEPTIONS` table, and when two arms that do
+exist have drifted apart. Each exception says *why* — either the missing arm is
+impossible (the rule matches JSX nodes, or its `files:` globs name only one
+extension) or it is a real gap, and then the entry carries the measurement and
+the issue that owns it. The failure this prevents is specific and has happened:
+a rule pointed at a language it cannot match reports zero, which is exactly what
+a correct rule with nothing to find reports. `test:rules` catches that for every
+rule it asserts; `test:twins` catches the arm that was never written.
+
 ## Repo-local extra rules
 
 A rule that encodes ONE repo's convention does not belong in the canon — but it
@@ -235,5 +266,6 @@ with fixtures instead of copying it into a second repo.
 
 ## Development
 
-`pnpm check` = build (tsc) + biome + fixture harness + gate-can-go-red test.
+`pnpm check` = build (tsc) + biome + fixture harness + twin coverage +
+gate-can-go-red test + metrics/init/severity/screens/hooks/iterate/leaks.
 CI runs exactly that, blocking.

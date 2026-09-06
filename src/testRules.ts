@@ -241,6 +241,65 @@ const EXPECTATIONS: Expectation[] = [
     hits: 3,
     goodSuffix: "screen-file-styling/good.screen.tsx",
   },
+  // ── wave 3: closing the .tsx language gap (is-fc8916f7) ───────────────
+  // Five rules were `language: typescript` with no `-tsx` twin, so every
+  // React component file was invisible to them. Each now has both arms, and
+  // both arms are asserted here — an unexecuted twin is the unexecuted rule
+  // the iron rule at the top of this file forbids. `src/twinCoverageTest.ts`
+  // is what stops the sixth such rule from being written without a twin.
+  //
+  // Three of these five (`json-roundtrip`, `kind-if-without-match`,
+  // `silent-default-return`) had no fixture at all before this wave — they
+  // were canon rules nothing executed. Their .ts arms are asserted here for
+  // the first time.
+  {
+    rule: "non-exhaustive-match-tsx",
+    badSuffix: "non-exhaustive-match/bad.tsx",
+    hits: 2,
+    goodSuffix: "non-exhaustive-match/good.tsx",
+  },
+  {
+    rule: "json-roundtrip",
+    badSuffix: "json-roundtrip/bad.ts",
+    hits: 2,
+    goodSuffix: "json-roundtrip/good.ts",
+  },
+  {
+    rule: "json-roundtrip-tsx",
+    badSuffix: "json-roundtrip/bad.tsx",
+    hits: 2,
+    goodSuffix: "json-roundtrip/good.tsx",
+  },
+  {
+    rule: "kind-if-without-match",
+    badSuffix: "kind-if-without-match/bad.ts",
+    hits: 4,
+    goodSuffix: "kind-if-without-match/good.ts",
+  },
+  {
+    rule: "kind-if-without-match-tsx",
+    badSuffix: "kind-if-without-match/bad.tsx",
+    hits: 4,
+    goodSuffix: "kind-if-without-match/good.tsx",
+  },
+  {
+    rule: "literal-union-in-component-tsx",
+    badSuffix: "literal-union-in-component/components/bad.tsx",
+    hits: 4,
+    goodSuffix: "literal-union-in-component/components/good.tsx",
+  },
+  {
+    rule: "silent-default-return",
+    badSuffix: "silent-default-return/bad.ts",
+    hits: 8,
+    goodSuffix: "silent-default-return/good.ts",
+  },
+  {
+    rule: "silent-default-return-tsx",
+    badSuffix: "silent-default-return/bad.tsx",
+    hits: 8,
+    goodSuffix: "silent-default-return/good.tsx",
+  },
 ];
 
 // A file that is deliberately out of scope — same offending code as the bad

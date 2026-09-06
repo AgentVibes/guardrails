@@ -1,0 +1,33 @@
+# ── the .tsx half of `silent-default-return` ──
+#
+# ast-grep's `typescript` and `tsx` languages are DISJOINT, not nested: a rule
+# at `language: typescript` matches `.ts` and NEVER `.tsx`. `silent-default-return`
+# was therefore blind to every React component file. The mechanism, and the
+# three alternatives that were tried and rejected on measurement, are written
+# out once in `catch-empty-tsx.yml`; the short version is that ast-grep has no
+# way to say "both languages", so a twin id per language is the only option.
+#
+# Measured 2026-09-06 across the same five repos: 24 findings in `.tsx`
+# (SiteCraft 3, faceless 0, observatory 9, tg-gallery 0, merkle-substrate 12).
+#
+# Keep this file's `rule:` block IDENTICAL to `silent-default-return.yml`.
+#
+id: silent-default-return-tsx
+language: tsx
+severity: warning
+message: |
+  Silent-default return on negation. Hides upstream bugs.
+  Throw with a contextual message, or return an explicit discriminated failure variant.
+  See defensive-errors Rule 1.
+  Suppressing this one needs the id you see above — `ast-grep-ignore: silent-default-return-tsx`.
+  `silent-default-return` is a DIFFERENT rule (the .ts arm) and does not cover it.
+rule:
+  any:
+    - pattern: "if (!$X) return null"
+    - pattern: "if (!$X) return []"
+    - pattern: "if (!$X) return 0"
+    - pattern: "if (!$X) return \"\""
+    - pattern: "if ($X === undefined) return null"
+    - pattern: "if ($X === undefined) return []"
+    - pattern: "if ($X == null) return null"
+    - pattern: "if ($X == null) return []"
