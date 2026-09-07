@@ -1,6 +1,7 @@
 import { AstGrepConfigError, scanFindings } from "./astGrep.js";
 import { type Finding, formatFinding, hasErrors } from "./findings.js";
 import { rulesConfig } from "./packagePaths.js";
+import { driftMessage, presetDrift, presetEnforced } from "./presetDrift.js";
 import { dedupeFindings, ruleConfigs } from "./repoRules.js";
 import {
   dropScreenExempt,
@@ -34,6 +35,27 @@ export function collectVerifyFindings(
 
 export function runVerify(targets: string[], json: boolean): number {
   const paths = targets.length > 0 ? targets : ["."];
+
+  // Preset drift is checked FIRST (is-9c7a78d7): a repo running its own biome
+  // config is not being linted by the thing this gate reports on, so a finding
+  // count from it means less than it looks. Enforcement is opt-in per repo
+  // (`[biome] preset = "enforced"`) while epic is-a70a5963 migrates the 37
+  // configs; unenforced, the drift is still SAID — silence is what let 37
+  // configs exist.
+  const drift = presetDrift(process.cwd());
+  if (drift.length > 0) {
+    const message = driftMessage(drift);
+    if (presetEnforced(process.cwd())) {
+      console.error(`guardrails verify: ${message}`);
+      return 2;
+    }
+    if (!json) {
+      console.log(
+        `note: ${message}\n  Not gated here yet — add [biome] preset = "enforced" to .agentvibes/project.toml once this repo is migrated.`,
+      );
+    }
+  }
+
   // Both manifest sections are resolved here so a config the gate cannot honour
   // exits 2 with the reason — never a stack trace, and never silently dropped.
   let findings: Finding[];

@@ -187,6 +187,40 @@ that this package contains none.
 { "extends": "@agentvibes/guardrails/tsconfig" }
 ```
 
+### One biome config per repo, and it is the preset
+
+The biome preset is a preset, not a starting point. `guardrails verify` and
+`guardrails doctor` check the repo for drift and name the offending keys in one
+line. Three things count as drift:
+
+| | what | why |
+|---|---|---|
+| a | `biome.json` does not list `@agentvibes/guardrails/biome` in `extends` | it is not using the preset at all |
+| b | it extends the preset and then carries its own `formatter`, `javascript.formatter`, `json.formatter`, `linter` or `assist` | those are the preset's decisions, restated locally so they can drift |
+| c | a second `biome.json` / `biome.jsonc` exists in the tree (outside `node_modules`, `dist`, `.claude` and the other skipped dirs) | two configs means two answers |
+
+Two things stay legal, because they scope rather than restyle: `files` (a repo
+decides which of ITS paths are linted) and an `overrides` entry that only turns
+`suspicious.noConsole` off for some paths (a CLI has to print).
+
+**Enforcement is opt-in per repo, for now.** Add
+
+```toml
+# .agentvibes/project.toml
+[biome]
+preset = "enforced"
+```
+
+and `verify` exits 2 on drift, `doctor` exits 1. Without it both still SAY the
+drift — `verify` prints it as a note, `doctor` as a `biome preset` line — and
+neither changes its exit code. The reason is sequencing, not softness: epic
+is-a70a5963 is migrating 37 configs, and 5 of the 7 repos running this gate do
+not conform yet. Each migration adds the line as its last step; when the last
+one lands, the default flips to enforced.
+
+The reusable gate workflow runs `verify-diff`, not `verify`, so a repo that opts
+in should add a `guardrails verify` (or `doctor`) step to its own CI.
+
 ## Rules and fixtures
 
 - `rules/` — the canon. Stable ids, each message is a mini-manual (why + fix).

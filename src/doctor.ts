@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { packageRoot, rulesDir, structureRulesDir } from "./packagePaths.js";
+import { driftMessage, presetDrift, presetEnforced } from "./presetDrift.js";
 import { declaredRuleDirs } from "./repoRules.js";
 import { pinnedVersion, tryResolveTool } from "./toolResolve.js";
 
@@ -101,6 +102,15 @@ export function runDoctor(json: boolean): number {
     },
     rulesetSha: rulesetSha(),
     configDiscovery: discoverConfigs(process.cwd()),
+    // Preset drift (is-9c7a78d7). `doctor` REPORTS it wherever it exists —
+    // seeing it is the point of this command — and exits non-zero only where
+    // the repo has opted in with `[biome] preset = "enforced"`, the same switch
+    // `verify` reads. Reporting everywhere and gating on the flag is what lets
+    // the epic migrate 37 configs without reddening 5 gates on day one.
+    presetDrift: {
+      enforced: presetEnforced(process.cwd()),
+      findings: presetDrift(process.cwd()),
+    },
   };
 
   if (json) {
@@ -122,7 +132,23 @@ export function runDoctor(json: boolean): number {
     for (const [k, v] of Object.entries(result.configDiscovery)) {
       console.log(`  ${k.padEnd(28)} ${v}`);
     }
+    if (result.presetDrift.findings.length === 0) {
+      console.log("biome preset  no drift");
+    } else {
+      console.log(
+        `biome preset  ${result.presetDrift.enforced ? "DRIFT (enforced here)" : "drift (not enforced here yet)"}`,
+      );
+      for (const f of result.presetDrift.findings) console.log(`  ${f.detail}`);
+      if (!result.presetDrift.enforced) {
+        console.log(
+          '  Add [biome] preset = "enforced" to .agentvibes/project.toml once this repo is migrated (epic is-a70a5963).',
+        );
+      }
+    }
   }
   const allFound = result.tools["ast-grep"].found && result.tools.biome.found;
-  return allFound ? 0 : 1;
+  const drifted = result.presetDrift.enforced && result.presetDrift.findings.length > 0;
+  if (drifted && !json)
+    console.error(`guardrails doctor: ${driftMessage(result.presetDrift.findings)}`);
+  return allFound && !drifted ? 0 : 1;
 }
