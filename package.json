@@ -1,6 +1,6 @@
 {
   "name": "@agentvibes/guardrails",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Verification toolkit that makes agents write simple code: ast-grep rule canon, diff ratchet, biome/tsconfig presets, one CLI.",
   "license": "MIT",
   "repository": {
@@ -35,7 +35,7 @@
     "format": "biome check --write .",
     "test:rules": "node dist/testRules.js",
     "test:gate": "node dist/gateRed.js",
-    "check": "pnpm build && pnpm lint && pnpm test:rules && pnpm test:twins && pnpm test:repo-rules && pnpm test:preset && pnpm test:gate && pnpm test:sibling-clone && pnpm test:metrics && pnpm test:init && pnpm test:severity && pnpm test:screens && pnpm test:hooks && pnpm test:iterate && pnpm test:leaks && pnpm leaks",
+    "check": "pnpm build && pnpm lint && pnpm test:rules && pnpm test:twins && pnpm test:repo-rules && pnpm test:preset && pnpm test:gate && pnpm test:sibling-clone && pnpm test:metrics && pnpm test:init && pnpm test:severity && pnpm test:screens && pnpm test:jsx-suppress && pnpm test:hooks && pnpm test:iterate && pnpm test:leaks && pnpm leaks",
     "test:metrics": "node dist/metricsCycle.js",
     "leaks": "node dist/cli.js leaks .",
     "test:leaks": "node dist/leaksRed.js",
@@ -47,7 +47,8 @@
     "test:twins": "node dist/twinCoverageTest.js",
     "test:repo-rules": "node dist/repoRulesTest.js",
     "test:preset": "node dist/presetDriftTest.js",
-    "test:sibling-clone": "node dist/siblingCloneTest.js"
+    "test:sibling-clone": "node dist/siblingCloneTest.js",
+    "test:jsx-suppress": "node dist/jsxSuppressTest.js"
   },
   "dependencies": {
     "ts-pattern": "^5.6.2",

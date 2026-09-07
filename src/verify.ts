@@ -1,5 +1,6 @@
 import { AstGrepConfigError, scanFindings } from "./astGrep.js";
 import { type Finding, formatFinding, hasErrors } from "./findings.js";
+import { dropJsxSuppressed } from "./jsxSuppress.js";
 import { rulesConfig } from "./packagePaths.js";
 import { driftMessage, presetDrift, presetEnforced } from "./presetDrift.js";
 import { dedupeFindings, ruleConfigs } from "./repoRules.js";
@@ -30,7 +31,12 @@ export function collectVerifyFindings(
   // Applied HERE rather than in `runVerify`, so verify-diff and the hooks get
   // the same scoping: a screen that is legal under `verify` must not be gated
   // by `verify-diff` on the same line.
-  return dropScopeExempt(findings, scopePatterns(cwd), scopeExemptRuleIds());
+  // JSX-form suppressions last: they are a per-line exemption like ast-grep's
+  // own, and must not change which rules a scope stands down.
+  return dropJsxSuppressed(
+    dropScopeExempt(findings, scopePatterns(cwd), scopeExemptRuleIds()),
+    cwd,
+  );
 }
 
 export function runVerify(targets: string[], json: boolean): number {
