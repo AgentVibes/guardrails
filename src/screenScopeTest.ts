@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { packageRoot } from "./packagePaths.js";
-import { screenExemptRuleIds } from "./screenScope.js";
+import { scopeExemptRuleIds } from "./screenScope.js";
 
 // `[verify] screens` — the repo says where its screens are; the canon says which
 // rules do not apply there (is-7067a0b8). Four directions, all executed:
@@ -22,6 +22,16 @@ const SCREEN =
   'import { rootStore } from "../stores/rootStore";\n' +
   'import { GalleryPageStore } from "../stores/GalleryPageStore";\n' +
   'export const GalleryScreen = () => new GalleryPageStore(rootStore, "slug");\n';
+// The canonical async union the kit publishes — what `no-local-kit-clone` tells
+// every other repo to import instead of redeclaring.
+const KIT_RESOURCE =
+  "export type Resource<T> =\n" +
+  '  | { kind: "idle" }\n' +
+  '  | { kind: "loading" }\n' +
+  '  | { kind: "ready"; value: T }\n' +
+  '  | { kind: "error"; message: string };\n';
+// Nothing to do with the kit: pins that the scope is one rule wide.
+const EMPTY_CATCH = "export const go = () => {\n  try { work() } catch (e) { }\n};\n";
 // A leaf reaching past the boundary — banned everywhere, screens included.
 const LEAF =
   'import { galleryStore } from "../stores/gallery";\n' +
@@ -56,12 +66,22 @@ const fail = (m: string) => {
   failed++;
 };
 
-// 0 — the marker exists, so the mechanism is not inert
-const exempt = screenExemptRuleIds();
-if (!exempt.has("direct-store-import")) {
-  fail("no bundled rule declares `appliesTo: not-screens` — the scope would filter nothing");
-} else {
-  console.log(`  ok  screen-scope: ${exempt.size} rule(s) declare appliesTo: not-screens`);
+// 0 — every registered scope has at least one rule carrying its marker, so no
+// scope in the registry is inert. A scope with an empty exempt set filters
+// nothing and would pass every other check below while doing nothing at all.
+const exempt = scopeExemptRuleIds();
+for (const [scope, ids] of exempt) {
+  if (ids.size === 0) {
+    fail(`no bundled rule declares \`appliesTo: not-${scope}\` — that scope would filter nothing`);
+  } else {
+    console.log(`  ok  screen-scope: ${ids.size} rule(s) declare appliesTo: not-${scope}`);
+  }
+}
+if (exempt.get("screens")?.has("direct-store-import") !== true) {
+  fail("direct-store-import lost its `appliesTo: not-screens` marker");
+}
+if (exempt.get("kit-source")?.has("no-local-kit-clone") !== true) {
+  fail("no-local-kit-clone lost its `appliesTo: not-kit-source` marker");
 }
 
 // 1 — no declaration, no change
@@ -95,6 +115,46 @@ if (!exempt.has("direct-store-import")) {
       fail("the leaf component MUST still fire — scoping screens is not an off-switch");
     } else {
       console.log("  ok  screen-scope: the leaf component still fires (the scope is narrow)");
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+// 5 — the second scope, kit-source: `@agentvibes/kit` holds the canonical
+// Resource<T>, and `no-local-kit-clone` (error tier) fires on it unless the
+// repo declares the tree. Both directions, because a scope that swallows the
+// rule everywhere would pass the declared half on its own.
+{
+  const root = mkdtempSync(join(tmpdir(), "guardrails-kitsrc-"));
+  try {
+    mkdirSync(join(root, "src", "resource"), { recursive: true });
+    mkdirSync(join(root, ".agentvibes"), { recursive: true });
+    writeFileSync(join(root, "src", "resource", "resource.ts"), KIT_RESOURCE);
+    writeFileSync(join(root, ".agentvibes", "project.toml"), "");
+    const undeclared = verify(root);
+    if (!undeclared.out.includes("no-local-kit-clone")) {
+      fail("without [verify] kit_source the canonical Resource<T> must still be flagged");
+    } else {
+      console.log("  ok  screen-scope: undeclared repo still fires no-local-kit-clone");
+    }
+
+    writeFileSync(join(root, ".agentvibes", "project.toml"), '[verify]\nkit_source = "^src/"\n');
+    const declared = verify(root);
+    if (declared.out.includes("no-local-kit-clone")) {
+      fail("a declared kit source must not be flagged by no-local-kit-clone");
+    } else {
+      console.log("  ok  screen-scope: the kit's own Resource<T> stops firing once declared");
+    }
+
+    // The narrowness half: a rule that has nothing to do with kit-source keeps
+    // firing inside the declared tree.
+    writeFileSync(join(root, "src", "resource", "swallow.ts"), EMPTY_CATCH);
+    const still = verify(root);
+    if (!still.out.includes("catch-empty")) {
+      fail("kit_source must scope no-local-kit-clone only — catch-empty still applies");
+    } else {
+      console.log("  ok  screen-scope: kit_source scopes one rule, not the whole tree");
     }
   } finally {
     rmSync(root, { recursive: true, force: true });

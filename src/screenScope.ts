@@ -33,19 +33,59 @@ import { readTomlTable } from "./tomlTable.js";
 //
 // Absent key = absent behaviour. A repo that says nothing is scanned exactly as
 // it was before this existed.
+//
+// GENERALISED (is-086a90ac). A second fact needed saying and the shape already
+// fitted: `no-local-kit-clone` is error-tier and fires on the six declarations
+// inside `@agentvibes/kit` itself — the canonical definitions the rule tells
+// everyone else to import. Its own header names the fix ("if this IS the
+// canonical definition … it belongs behind the path carve-outs") and its
+// carve-out globs, written while the package did not exist yet, are
+// `**/packages/kit/**` and `**/agentvibes-kit/**`: neither matches a standalone
+// repo whose files verify sees as `src/resource/resource.ts`. No path glob can
+// tell that tree from any other repo's `src/` — only the repo knows, so the
+// repo says it:
+//
+//   [verify]
+//   kit_source = "^src/"
+//
+// Adding a scope is two lines here plus `appliesTo: not-<scope>` in the rules
+// that stand down for it. The registry is closed on purpose: an unknown scope
+// key in a repo's config is a typo the repo cannot see, and the alternative — a
+// free-form per-rule path map — is the growing allowlist this design refused.
 export class ScreenScopeError extends Error {}
 
-/** Rule ids whose bundled definition declares `appliesTo: not-screens`. */
-export function screenExemptRuleIds(dir: string = rulesDir): Set<string> {
-  const ids = new Set<string>();
+export interface Scope {
+  /** The name in `appliesTo: not-<name>`. */
+  readonly name: string;
+  /** The key under `[verify]` in .agentvibes/project.toml. */
+  readonly tomlKey: string;
+}
+
+export const SCOPES: readonly Scope[] = [
+  { name: "screens", tomlKey: "screens" },
+  { name: "kit-source", tomlKey: "kit_source" },
+];
+
+/** scope name -> rule ids whose bundled definition declares `appliesTo: not-<scope>`. */
+export function scopeExemptRuleIds(dir: string = rulesDir): Map<string, Set<string>> {
+  const byScope = new Map<string, Set<string>>(SCOPES.map((s) => [s.name, new Set<string>()]));
   for (const f of readdirSync(dir)) {
     if (!f.endsWith(".yml")) continue;
     const text = readFileSync(join(dir, f), "utf8");
     const id = text.match(/^id:\s*(\S+)/m)?.[1];
     if (id === undefined) continue;
-    if (/^\s{2}appliesTo:\s*not-screens\s*$/m.test(text)) ids.add(id);
+    for (const s of SCOPES) {
+      if (new RegExp(`^\\s{2}appliesTo:\\s*not-${s.name}\\s*$`, "m").test(text)) {
+        byScope.get(s.name)?.add(id);
+      }
+    }
   }
-  return ids;
+  return byScope;
+}
+
+/** Rule ids whose bundled definition declares `appliesTo: not-screens`. */
+export function screenExemptRuleIds(dir: string = rulesDir): Set<string> {
+  return scopeExemptRuleIds(dir).get("screens") ?? new Set<string>();
 }
 
 /**
@@ -57,28 +97,43 @@ export function screenExemptRuleIds(dir: string = rulesDir): Set<string> {
  * believes it has scoped them.
  */
 export function screensPattern(cwd: string): RegExp | undefined {
-  const raw = readTomlTable(join(cwd, ".agentvibes", "project.toml"), "verify").screens;
-  if (raw === undefined || raw.trim() === "") return undefined;
-  try {
-    return new RegExp(raw);
-  } catch (e) {
-    throw new ScreenScopeError(
-      `[verify] screens = ${JSON.stringify(raw)} is not a valid regular expression (${(e as Error).message})`,
-    );
+  return scopePatterns(cwd).get("screens");
+}
+
+/** Every scope pattern the repo declares, keyed by scope name. */
+export function scopePatterns(cwd: string): Map<string, RegExp> {
+  const table = readTomlTable(join(cwd, ".agentvibes", "project.toml"), "verify");
+  const out = new Map<string, RegExp>();
+  for (const s of SCOPES) {
+    const raw = table[s.tomlKey];
+    if (raw === undefined || raw.trim() === "") continue;
+    try {
+      out.set(s.name, new RegExp(raw));
+    } catch (e) {
+      throw new ScreenScopeError(
+        `[verify] ${s.tomlKey} = ${JSON.stringify(raw)} is not a valid regular expression (${(e as Error).message})`,
+      );
+    }
   }
+  return out;
 }
 
 /**
- * Drop findings from rules that do not apply to screens, in files the repo has
- * declared to BE screens. Everything else passes through untouched — including
- * those same rules outside the screen paths, which is the half that has to keep
- * working for the scoping to be worth anything.
+ * Drop findings from rules that do not apply to a scope, in files the repo has
+ * declared to BE that scope. Everything else passes through untouched —
+ * including those same rules outside the scoped paths, which is the half that
+ * has to keep working for the scoping to be worth anything.
  */
-export function dropScreenExempt(
+export function dropScopeExempt(
   findings: readonly Finding[],
-  screens: RegExp | undefined,
-  exempt: ReadonlySet<string>,
+  patterns: ReadonlyMap<string, RegExp>,
+  exempt: ReadonlyMap<string, Set<string>>,
 ): Finding[] {
-  if (screens === undefined || exempt.size === 0) return [...findings];
-  return findings.filter((f) => !(exempt.has(f.rule) && screens.test(f.file)));
+  if (patterns.size === 0) return [...findings];
+  return findings.filter((f) => {
+    for (const [scope, re] of patterns) {
+      if (exempt.get(scope)?.has(f.rule) === true && re.test(f.file)) return false;
+    }
+    return true;
+  });
 }

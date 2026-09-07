@@ -4,10 +4,10 @@ import { rulesConfig } from "./packagePaths.js";
 import { driftMessage, presetDrift, presetEnforced } from "./presetDrift.js";
 import { dedupeFindings, ruleConfigs } from "./repoRules.js";
 import {
-  dropScreenExempt,
+  dropScopeExempt,
   ScreenScopeError,
-  screenExemptRuleIds,
-  screensPattern,
+  scopeExemptRuleIds,
+  scopePatterns,
 } from "./screenScope.js";
 import { SeverityConfigError, severityRaiseArgs } from "./severity.js";
 import { structureFindings } from "./structure.js";
@@ -30,7 +30,7 @@ export function collectVerifyFindings(
   // Applied HERE rather than in `runVerify`, so verify-diff and the hooks get
   // the same scoping: a screen that is legal under `verify` must not be gated
   // by `verify-diff` on the same line.
-  return dropScreenExempt(findings, screensPattern(process.cwd()), screenExemptRuleIds());
+  return dropScopeExempt(findings, scopePatterns(cwd), scopeExemptRuleIds());
 }
 
 export function runVerify(targets: string[], json: boolean): number {

@@ -34,7 +34,23 @@
 # `Resource` must carry type parameters to match. Without that the rule hits
 # `interface Resource { name; url; type; description }` in VolumePhotography — a
 # page listing conference links, nothing to do with async state.
+# CARVE-OUT 1 IS NOW A REPO DECLARATION, not only a glob (is-086a90ac).
+# `@agentvibes/kit` exists since 2026-09 and lives in its own repo, where verify
+# sees its files as `src/resource/resource.ts` — neither `**/packages/kit/**`
+# nor `**/agentvibes-kit/**` matches that, and no path glob can tell that tree
+# from any other repo's `src/`. So the kit repo says so itself:
+#
+#   [verify]
+#   kit_source = "^src/"
+#
+# together with the `appliesTo: not-kit-source` marker below. Same mechanism
+# `[verify] screens` uses (is-7067a0b8): the repo states a fact about itself,
+# the canon says which rules stand down for it. The globs stay for monorepos
+# that vendor the kit under `packages/kit/`.
+#
 id: no-local-kit-clone-tsx
+metadata:
+  appliesTo: not-kit-source
 language: tsx
 severity: error
 ignores:

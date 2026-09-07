@@ -236,6 +236,42 @@ in should add a `guardrails verify` (or `doctor`) step to its own CI.
   `rules/`; the eight that remain are repo-local by decision, with the reason
   for each recorded in `candidates/README.md`. Still loaded nowhere.
 
+### Scopes — the repo states a fact, the canon says which rules stand down
+
+Some rules cannot be scoped by a glob inside the rule file, because the layout
+they need to know about is the repo's, not the canon's. Those facts go in
+`.agentvibes/project.toml` under `[verify]`:
+
+```toml
+[verify]
+screens    = "^src/screens/"   # these paths ARE screens
+kit_source = "^src/"           # this tree IS @agentvibes/kit
+```
+
+Each key states a fact about the repo — not a suppression. Which rules stop
+applying is the canon's business, declared in the rule itself:
+
+```yaml
+metadata:
+  appliesTo: not-screens      # direct-store-import
+  appliesTo: not-kit-source   # no-local-kit-clone, + its tsx twin
+```
+
+`screens` exists because a screen owns its page store and must import the class
+`direct-store-import` bans in a component; `kit_source` because
+`no-local-kit-clone` is error-tier and fires on the six canonical declarations
+inside `@agentvibes/kit` itself — the definitions it tells everyone else to
+import.
+
+Absent key = absent behaviour: a repo that says nothing is scanned exactly as it
+was. A pattern that is not a valid regular expression exits 2 with the reason
+rather than being dropped — a scope the gate cannot honour must fail loudly. The
+scope registry is closed (`SCOPES` in `src/screenScope.ts`); a free-form
+per-rule path map in user config would be the growing allowlist this refuses.
+`pnpm test:screens` asserts both directions of each scope AND that every
+registered scope has at least one rule carrying its marker — a scope nothing
+declares filters nothing while looking like it works.
+
 Per-repo severity RAISE: a repo that held a rule stricter than the canon keeps
 its gate via `[severity]` in `.agentvibes/project.toml`
 (`zod-optional-nullable = "error"`) — applied through ast-grep's native
