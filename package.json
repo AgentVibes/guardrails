@@ -1,6 +1,6 @@
 {
   "name": "@agentvibes/guardrails",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Verification toolkit that makes agents write simple code: ast-grep rule canon, diff ratchet, biome/tsconfig presets, one CLI.",
   "license": "MIT",
   "repository": {

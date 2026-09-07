@@ -18,7 +18,8 @@ import { readTomlTable } from "./tomlTable.js";
 //
 // What stays legal, because it is scoping rather than style: `files` (a repo
 // decides which of ITS paths are linted) and an `overrides` entry that only
-// turns `noConsole` off for some paths (a CLI has to print).
+// turns `noConsole` off for some paths (a CLI has to print), or
+// `noEmptyBlockStatements` off for TEST paths (see OVERRIDABLE).
 //
 // A repo with no biome config at all is not drifting and reports nothing —
 // there is no config to have re-grown. `guardrails doctor` still shows it as
@@ -35,6 +36,37 @@ const PRESET_OWNED_NESTED = ["javascript", "json"] as const;
 
 /** Keys an override may carry besides its rule content — path scoping only. */
 const OVERRIDE_SCOPING = new Set(["includes", "files", "ignore"]);
+
+/**
+ * The only rules a repo may override, and why each is not a fork of the preset.
+ *
+ * `noConsole` — a CLI has to print.
+ *
+ * `noEmptyBlockStatements` — error-tier in the preset, and it fires on
+ * `mockImplementation(() => {})` and friends. Measured while migrating
+ * (epic is-a70a5963): 110 occurrences in byoklab/agent-workbench, almost all in
+ * `__tests__/`, and 16 in @agentvibes/kit. Writing a suppression comment on
+ * every one of them is noise, not review. Owner's call, 2026-09-07: a per-repo
+ * override, scoped to tests. It stays error-tier in real source, which is where
+ * an empty `catch` actually hides something.
+ */
+const OVERRIDABLE = new Set(["noConsole", "noEmptyBlockStatements"]);
+
+/** A path glob that names test code — the only scope the empty-block carve-out may take. */
+const TEST_PATH =
+  /(^|\/|\*)(__tests__|__e2e__|__mocks__|tests?|e2e|spec)(\/|$)|\.(test|spec)\.[jt]sx?$|\.(test|spec)\.\*|\*\.(test|spec)\b/;
+
+/**
+ * True when EVERY positive glob in the entry's `includes` names test code. An
+ * entry with no `includes`, or with one non-test glob among them, is not
+ * test-scoped: the carve-out would then reach production files.
+ */
+function testScoped(entry: Record<string, unknown>): boolean {
+  const raw = entry.includes ?? entry.files;
+  if (!Array.isArray(raw)) return false;
+  const positive = raw.filter((g): g is string => typeof g === "string" && !g.startsWith("!"));
+  return positive.length > 0 && positive.every((g) => TEST_PATH.test(g));
+}
 
 export interface DriftFinding {
   /** What is wrong, keyed for the one-line message. */
@@ -135,7 +167,9 @@ function offendingOverrides(config: BiomeConfig): string[] {
         bad.push(`overrides[${i}].${key}`);
         continue;
       }
-      // A linter override is allowed if the ONLY rule it touches is noConsole.
+      // A linter override may touch exactly two rules, both under `suspicious`,
+      // and nothing else: `noConsole` (a CLI has to print) and
+      // `noEmptyBlockStatements` SCOPED TO TESTS. See OVERRIDABLE below.
       const rules = (o.linter as Record<string, unknown> | undefined)?.rules;
       const groups =
         typeof rules === "object" && rules !== null ? (rules as Record<string, unknown>) : {};
@@ -144,9 +178,19 @@ function offendingOverrides(config: BiomeConfig): string[] {
       const suspicious = groups.suspicious;
       const ruleNames =
         typeof suspicious === "object" && suspicious !== null ? Object.keys(suspicious) : [];
-      const onlyNoConsole = ruleNames.length === 1 && ruleNames[0] === "noConsole";
-      if (!onlySuspicious || !onlyNoConsole) {
-        bad.push(`overrides[${i}].linter.rules (only suspicious.noConsole may be overridden)`);
+      const allOverridable = ruleNames.length > 0 && ruleNames.every((r) => OVERRIDABLE.has(r));
+      if (!onlySuspicious || !allOverridable) {
+        bad.push(
+          `overrides[${i}].linter.rules (only ${[...OVERRIDABLE].map((r) => `suspicious.${r}`).join(" and ")} may be overridden)`,
+        );
+        continue;
+      }
+      // The empty-block carve-out is for TEST code only. Unscoped, it would be
+      // the whole rule switched off through a loophole.
+      if (ruleNames.includes("noEmptyBlockStatements") && !testScoped(o)) {
+        bad.push(
+          `overrides[${i}].linter.rules.suspicious.noEmptyBlockStatements (allowed only for test paths — every entry in \`includes\` must name a test file or directory)`,
+        );
       }
     }
   });

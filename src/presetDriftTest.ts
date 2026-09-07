@@ -149,6 +149,66 @@ function main(): number {
         wideDetail,
       ) && ok;
 
+    // The test-scoped noEmptyBlockStatements carve-out (owner's call,
+    // 2026-09-07). Three directions, because a carve-out that is not scoped is
+    // the rule switched off through a loophole.
+    const TEST_OVERRIDE = {
+      $schema: "https://biomejs.dev/schemas/2.5.10/schema.json",
+      extends: ["@agentvibes/guardrails/biome"],
+      overrides: [
+        {
+          includes: ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
+          linter: { rules: { suspicious: { noEmptyBlockStatements: "off" } } },
+        },
+      ],
+    };
+    const scoped = make({ biome: JSON.stringify(TEST_OVERRIDE) });
+    ok =
+      expectStep(
+        "(b) noEmptyBlockStatements off for test paths only is NOT drift",
+        presetDrift(scoped.dir).every((f) => f.key !== "overrides"),
+        JSON.stringify(presetDrift(scoped.dir)),
+      ) && ok;
+
+    const unscoped = make({
+      biome: JSON.stringify({
+        ...TEST_OVERRIDE,
+        overrides: [
+          {
+            includes: ["src/**"],
+            linter: { rules: { suspicious: { noEmptyBlockStatements: "off" } } },
+          },
+        ],
+      }),
+    });
+    const unscopedDetail =
+      presetDrift(unscoped.dir).find((f) => f.key === "overrides")?.detail ?? "";
+    ok =
+      expectStep(
+        "(b) the same override on src/** IS drift — the carve-out is for tests",
+        unscopedDetail.includes("noEmptyBlockStatements"),
+        unscopedDetail,
+      ) && ok;
+
+    const mixed = make({
+      biome: JSON.stringify({
+        ...TEST_OVERRIDE,
+        overrides: [
+          {
+            includes: ["**/__tests__/**", "src/**"],
+            linter: { rules: { suspicious: { noEmptyBlockStatements: "off" } } },
+          },
+        ],
+      }),
+    });
+    const mixedDetail = presetDrift(mixed.dir).find((f) => f.key === "overrides")?.detail ?? "";
+    ok =
+      expectStep(
+        "(b) one non-test glob among the test globs IS drift",
+        mixedDetail.includes("noEmptyBlockStatements"),
+        mixedDetail,
+      ) && ok;
+
     const second = make({ biome: CONFORMING, secondConfig: CONFORMING });
     ok =
       expectStep(
