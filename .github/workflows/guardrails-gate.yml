@@ -119,13 +119,54 @@ jobs:
       # Shallow clones at repos/<owner>/<name>: the gate only needs the trees
       # to exist for install to succeed. Plain git clone rather than
       # actions/checkout so one token covers N repos.
+      #
+      # THE DESTINATION IS REMOVED FIRST, and that is the whole point of the
+      # step's shape (is-8774fe0e). A self-hosted runner keeps its _work
+      # directory between jobs, and `actions/checkout` cleans only its own path
+      # — which, when sibling_repos is set, is repos/<owner>/<repo-under-test>.
+      # The siblings sit next to it and nothing removed them, so the second run
+      # on any such runner died with "destination path ... already exists and
+      # is not an empty directory", exit 128. tg-gallery: run 34019944126 green
+      # (clean workspace), 34021048450 and 34021105600 red on the leftovers.
+      #
+      # That failure is worse than an ordinary red build: it lands BEFORE
+      # verify-diff, so the ratchet, the metrics ratchet and the install were
+      # all reported as `skipped` — the "gate ran and found nothing" shape this
+      # workflow's own registry-auth comment, eleven lines below, exists to
+      # prevent.
+      #
+      # Fresh rather than fetch-and-reset: a leftover sibling is also STALE, and
+      # a gate installing against last week's sibling is a wrong answer rather
+      # than a slow one. The clone is --depth=1; there is nothing to reuse.
+      #
+      # sibling_repos travels through the environment, never through `${{ }}`
+      # inside the script: interpolating a caller-supplied input straight into
+      # the shell let any consumer repo's workflow inputs run commands here.
       - name: clone sibling repos (gits layout)
         if: ${{ inputs.sibling_repos != '' }}
         env:
           SIBLING_TOKEN: ${{ secrets.sibling_token || github.token }}
+          SIBLING_REPOS: ${{ inputs.sibling_repos }}
+          MAIN_REPO: ${{ github.repository }}
         run: |
-          for repo in ${{ inputs.sibling_repos }}; do
-            echo "cloning $repo -> repos/$repo"
+          set -eu
+          for repo in $SIBLING_REPOS; do
+            case "$repo" in
+              */*/*|/*|*..*|"")
+                echo "::error title=guardrails gate::sibling_repos entry '$repo' is not an owner/name pair" >&2
+                exit 1 ;;
+              */*) ;;
+              *)
+                echo "::error title=guardrails gate::sibling_repos entry '$repo' is not an owner/name pair" >&2
+                exit 1 ;;
+            esac
+            if [ "$repo" = "$MAIN_REPO" ]; then
+              # repos/$MAIN_REPO is this run's own checkout; rm -rf would delete it.
+              echo "::error title=guardrails gate::sibling_repos lists the repo under test ($repo). That path holds this run's checkout." >&2
+              exit 1
+            fi
+            echo "cloning $repo -> repos/$repo (removing any leftover from a previous run)"
+            rm -rf "repos/${repo}"
             git clone --depth=1 "https://x-access-token:${SIBLING_TOKEN}@github.com/${repo}.git" "repos/${repo}"
           done
 

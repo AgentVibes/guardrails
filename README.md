@@ -84,7 +84,14 @@ Workspaces that reach outside their repo (`link:../<repo>/...` overrides,
 `sibling_repos: "owner/repo owner2/repo2"`: the gate then checks the main
 repo out at `repos/<org>/<repo>` depth and shallow-clones each sibling at its
 own `repos/<owner>/<name>`, reproducing a `gits/<org>/<repo>` disk layout so
-the relative escapes resolve. Private siblings additionally need
+the relative escapes resolve. **Each sibling path is removed and re-cloned on
+every run.** A self-hosted runner keeps its `_work` directory between jobs and
+`actions/checkout` cleans only its own path, so the leftovers used to make the
+step exit 128 on every run after the first — before install, so the ratchet
+showed as `skipped` rather than as not-run (is-8774fe0e). Re-cloning also keeps
+the sibling current: gating against last week's sibling is a wrong answer, not
+a cheap one. Listing the repo under test in `sibling_repos` is refused — that
+path holds the run's own checkout. Private siblings additionally need
 `secrets: { sibling_token: <PAT with read on them> }` — the default job token
 cannot reach other repos. `@v0` is a
 moving tag that follows validated releases, actions-style; pin `@<commit-sha>`
