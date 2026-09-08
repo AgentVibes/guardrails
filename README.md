@@ -16,6 +16,17 @@ Tools (ast-grep, biome) are not npm dependencies: the CLI resolves them from
 PATH, falls back to `mise x <tool>@<pin>` using the pins in this package's
 `mise.toml`, and prints a one-line install hint when neither works.
 
+**Biome must be 2.5 or newer.** The preset writes
+`linter.rules.preset: "recommended"`, a key biome 2.4 does not know, so an older
+biome refuses the whole config rather than degrading — it lints nothing and says
+`Found an unknown key 'preset'`. Biome v1 refuses it harder still, on
+`includes`, `root` and `assist` as well. Measured across the fleet on
+2026-09-07: of 18 repos with a readable biome, twelve were on 1.9.4.
+
+Adopting the preset, and what a repo may keep in its own `biome.json`, is
+[Presets](#presets) below — including `[biome] preset = "enforced"`, which is
+what makes drift fail a build rather than only be reported.
+
 Installing straight from git (`github:AgentVibes/guardrails#<sha>`) works —
 the `prepare` script builds `dist/` at install time — but pnpm blocks
 lifecycle scripts of git-hosted deps by default, and the unblock knob moved
