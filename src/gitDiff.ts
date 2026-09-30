@@ -1,6 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { isAbsolute, join } from "node:path";
 
+function absPath(root: string, f: string): string {
+  return isAbsolute(f) ? f : join(root, f);
+}
+
 function git(root: string | undefined, args: string[]): string | undefined {
   const res = spawnSync("git", root === undefined ? args : ["-C", root, ...args], {
     encoding: "utf8",
@@ -63,33 +67,64 @@ export function changedFiles(
   root: string,
   mergeBase: string,
 ): { tracked: string[]; untracked: string[] } {
-  const abs = (f: string): string => (isAbsolute(f) ? f : join(root, f));
   const tracked = (
     git(root, ["diff", "--name-only", "--diff-filter=ACMR", mergeBase, "--", "*.ts", "*.tsx"]) ?? ""
   )
     .split("\n")
     .filter((f) => f !== "")
-    .map(abs);
+    .map((f) => absPath(root, f));
   const untracked = (
     git(root, ["ls-files", "--others", "--exclude-standard", "--", "*.ts", "*.tsx"]) ?? ""
   )
     .split("\n")
     .filter((f) => f !== "")
-    .map(abs);
+    .map((f) => absPath(root, f));
   return { tracked, untracked };
 }
 
-/** 1-based line numbers ADDED in the working tree vs mergeBase for one file. */
-export function addedLines(root: string, mergeBase: string, file: string): Set<number> {
-  const out = git(root, ["diff", "-U0", mergeBase, "--", file]) ?? "";
-  const lines = new Set<number>();
+/**
+ * 1-based line numbers ADDED in the working tree vs mergeBase, per file.
+ *
+ * ONE rename-aware diff (`-M`) for all .ts/.tsx paths is parsed, not one diff
+ * per file. Diffing a renamed file alone hands git only its new path, so it
+ * cannot pair the rename and reports every line as added; with both paths in
+ * the same diff a 100%-similarity rename produces no hunks at all and a
+ * rename-with-edits produces hunks only for the lines that actually changed.
+ *
+ * Keyed by ABSOLUTE path (like changedFiles). A file with no added lines — a
+ * pure rename, a deletion — is absent rather than mapped to an empty set.
+ */
+export function addedLinesByFile(root: string, mergeBase: string): Map<string, Set<number>> {
+  const out = git(root, ["diff", "-U0", "-M", mergeBase, "--", "*.ts", "*.tsx"]) ?? "";
+  const byFile = new Map<string, Set<number>>();
+  let file: string | undefined;
   for (const line of out.split("\n")) {
-    if (!line.startsWith("@@")) continue;
+    if (line.startsWith("+++ ")) {
+      // git appends a tab when the path contains whitespace; a pure rename has
+      // no `+++` line at all, which is what leaves its target absent.
+      const p = line.slice(4).replace(/\t$/, "");
+      file = p === "/dev/null" ? undefined : absPath(root, p.replace(/^b\//, ""));
+      continue;
+    }
+    if (file === undefined || !line.startsWith("@@")) continue;
     const m = line.match(/\+(\d+)(?:,(\d+))?/);
     if (m === null) continue;
     const start = Number(m[1]);
     const len = m[2] === undefined ? 1 : Number(m[2]);
+    let lines = byFile.get(file);
+    if (lines === undefined) {
+      lines = new Set<number>();
+      byFile.set(file, lines);
+    }
     for (let i = 0; i < len; i++) lines.add(start + i);
   }
-  return lines;
+  return byFile;
+}
+
+/**
+ * 1-based line numbers ADDED in the working tree vs mergeBase for one file.
+ * "No added lines" and "file absent from the diff" are both the empty set.
+ */
+export function addedLines(root: string, mergeBase: string, file: string): Set<number> {
+  return addedLinesByFile(root, mergeBase).get(absPath(root, file)) ?? new Set<number>();
 }

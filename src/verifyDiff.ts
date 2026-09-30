@@ -2,7 +2,7 @@ import { join, relative } from "node:path";
 import { match } from "ts-pattern";
 import { AstGrepConfigError, scanFindings } from "./astGrep.js";
 import { type Finding, formatFinding } from "./findings.js";
-import { addedLines, changedFiles, gitRoot, resolveMergeBase } from "./gitDiff.js";
+import { addedLinesByFile, changedFiles, gitRoot, resolveMergeBase } from "./gitDiff.js";
 import { rulesConfig } from "./packagePaths.js";
 import { dedupeFindings, ruleConfigs } from "./repoRules.js";
 import { SeverityConfigError, severityRaiseArgs } from "./severity.js";
@@ -77,18 +77,17 @@ function planFor(rung: Rung): Plan {
     .with({ kind: "added-lines" }, ({ root, mergeBase }) => {
       const { tracked, untracked } = changedFiles(root, mergeBase);
       const untrackedSet = new Set(untracked);
-      const addedByFile = new Map<string, Set<number>>();
+      // One rename-aware diff for every changed file: a renamed file's added
+      // lines are its hunks only, so a pure rename contributes no added lines
+      // and an inherited violation never gates. A file absent from the map has
+      // no added lines (pure rename, deletion) — nothing to keep.
+      const addedByFile = addedLinesByFile(root, mergeBase);
       return {
         rungLabel: `added-lines vs merge-base ${mergeBase.slice(0, 12)}`,
         files: [...new Set([...tracked, ...untracked])],
         keep: (f: Finding) => {
           if (untrackedSet.has(f.file)) return true;
-          let added = addedByFile.get(f.file);
-          if (added === undefined) {
-            added = addedLines(root, mergeBase, f.file);
-            addedByFile.set(f.file, added);
-          }
-          return added.has(f.line);
+          return addedByFile.get(f.file)?.has(f.line) ?? false;
         },
       };
     })
