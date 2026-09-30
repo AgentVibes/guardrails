@@ -98,8 +98,18 @@ export function addedLinesByFile(root: string, mergeBase: string): Map<string, S
   const out = git(root, ["diff", "-U0", "-M", mergeBase, "--", "*.ts", "*.tsx"]) ?? "";
   const byFile = new Map<string, Set<number>>();
   let file: string | undefined;
+  // `+++ ` is a header only between `diff --git` and the file's first `@@`.
+  // Inside a hunk, an ADDED source line whose text starts with `++ ` is also
+  // printed as `+++ …`, and must not be read as a new file.
+  let inHeader = false;
   for (const line of out.split("\n")) {
-    if (line.startsWith("+++ ")) {
+    if (line.startsWith("diff --git ")) {
+      file = undefined;
+      inHeader = true;
+      continue;
+    }
+    if (line.startsWith("@@")) inHeader = false;
+    if (inHeader && line.startsWith("+++ ")) {
       // git appends a tab when the path contains whitespace; a pure rename has
       // no `+++` line at all, which is what leaves its target absent.
       const p = line.slice(4).replace(/\t$/, "");
