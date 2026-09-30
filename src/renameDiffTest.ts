@@ -162,6 +162,29 @@ function main(): number {
       return 1;
     }
 
+    // 4. an added line whose text starts with `++ ` prints as `+++ …` inside a
+    //    -U0 hunk; it must count as an added line, not as a new file header.
+    const plus = join(dir, "plus");
+    const plusBase = seedRepo(plus);
+    //    It only bites when a LATER hunk follows it, so it goes after line 1 and
+    //    a second, separate hunk is appended at the end: lines 2 and 5.
+    const [first, ...rest] = BASE_SOURCE.split("\n");
+    writeFileSync(
+      join(plus, "original.ts"),
+      `${first}\n++ not a header\n${rest.join("\n")}export const after = 5;\n`,
+    );
+    const plusAdded = addedLinesByFile(plus, plusBase);
+    const plusLines = plusAdded.get(join(plus, "original.ts"));
+    if (
+      !expectStep(
+        "added line starting with `++ ` → counted in its own file, no phantom file",
+        plusAdded.size === 1 && plusLines?.size === 2 && plusLines.has(2) && plusLines.has(5),
+        `files=${[...plusAdded.keys()].join(",")} added=${plusLines === undefined ? "absent" : [...plusLines].join(",")}`,
+      )
+    ) {
+      return 1;
+    }
+
     console.log("rename-diff fixtures passed");
     return 0;
   } finally {
