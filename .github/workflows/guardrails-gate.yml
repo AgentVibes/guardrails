@@ -60,6 +60,20 @@ on:
         required: false
         type: string
         default: ""
+      mise_cache:
+        description: >-
+          Restore and save the mise tool cache through the Actions cache
+          service (mise-action's `cache`). Leave TRUE on hosted runners,
+          where every job starts empty. Set FALSE on a self-hosted runner whose
+          user already has the tools installed: there the restore downloads and
+          unpacks the whole mise data directory over the live one before
+          `mise install` reports "all tools are installed". Measured on
+          merkle-substrate 2026-10-02 (run 36983745781): an 8.1 GB cache, 6.5
+          minutes to download and 3.3 to extract, about 10 of the gate's 11
+          minutes.
+        required: false
+        type: boolean
+        default: true
       runner_labels:
         description: >-
           JSON array of labels selecting the runner for the gate job. Defaults
@@ -115,6 +129,7 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           tool_versions: ${{ inputs.tool_versions }}
+          cache: ${{ inputs.mise_cache }}
 
       # Shallow clones at repos/<owner>/<name>: the gate only needs the trees
       # to exist for install to succeed. Plain git clone rather than
