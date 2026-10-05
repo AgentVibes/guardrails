@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { packageRoot } from "./packagePaths.js";
 import { presetDrift } from "./presetDrift.js";
 
@@ -9,71 +9,52 @@ import { presetDrift } from "./presetDrift.js";
 // is-a70a5963 collapses 37 hand-rolled biome configs into one preset; this is
 // what stops a repo re-growing its own afterwards.
 //
-// Both directions are executed, and so is the opt-in switch: a repo that has
-// not yet migrated must SEE its drift and still exit 0, and the same repo with
-// `[biome] preset = "enforced"` must exit 2. A guard that only ever ran in the
-// enforced direction would not prove the unenforced one is quiet.
+// The fixtures live in test/preset-drift/ (see its README): `valid/` must pass,
+// `invalid/<key>--<name>.json` must report drift with that finding key. Every
+// one is run through the library AND the CLI, because the exit codes are the
+// gate: drift fails `verify` (exit 2) and `doctor` (exit 1) in every repo, with
+// no opt-in anywhere in the tree.
 
+const FIXTURES = join(packageRoot, "test", "preset-drift");
 const CLEAN_TS = "export const two = 1 + 1;\n";
 
-/** The config `guardrails init` writes, plus the two allowances. */
-const CONFORMING = JSON.stringify(
-  {
-    $schema: "https://biomejs.dev/schemas/2.5.10/schema.json",
-    extends: ["@agentvibes/guardrails/biome"],
-    // Scoping its own paths is the repo's business, not the preset's.
-    files: { includes: ["**/*.ts", "!**/dist"] },
-    // A CLI has to print; this is the one rule an override may touch.
-    overrides: [{ includes: ["src/**"], linter: { rules: { suspicious: { noConsole: "off" } } } }],
-  },
-  null,
-  2,
-);
-
-const NO_EXTENDS = JSON.stringify({ formatter: { indentWidth: 4 } }, null, 2);
-
-const OWN_KEYS = JSON.stringify(
-  {
-    extends: ["@agentvibes/guardrails/biome"],
-    formatter: { lineWidth: 80 },
-    linter: { rules: { style: { useConst: "off" } } },
-    assist: { enabled: false },
-    javascript: { formatter: { quoteStyle: "single" } },
-    json: { formatter: { indentWidth: 4 } },
-  },
-  null,
-  2,
-);
-
-const WIDE_OVERRIDE = JSON.stringify(
-  {
-    extends: ["@agentvibes/guardrails/biome"],
-    overrides: [
-      { includes: ["src/**"], linter: { rules: { style: { useConst: "off" } } } },
-      { includes: ["gen/**"], formatter: { enabled: false } },
-    ],
-  },
-  null,
-  2,
-);
-
-interface Repo {
+interface Fixture {
+  name: string;
+  /** The finding key an invalid fixture must produce; undefined for valid ones. */
+  expectKey: string | undefined;
   dir: string;
 }
 
-function makeRepo(opts: { biome?: string; secondConfig?: string; enforced?: boolean }): Repo {
+/** Write one fixture tree (path → JSON value, or raw text) into a fresh temp repo. */
+function materialise(file: string): string {
+  const tree = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
   const dir = mkdtempSync(join(tmpdir(), "guardrails-preset-"));
   writeFileSync(join(dir, "a.ts"), CLEAN_TS);
-  if (opts.biome !== undefined) writeFileSync(join(dir, "biome.json"), opts.biome);
-  if (opts.secondConfig !== undefined) {
-    mkdirSync(join(dir, "packages", "web"), { recursive: true });
-    writeFileSync(join(dir, "packages", "web", "biome.json"), opts.secondConfig);
+  for (const [path, content] of Object.entries(tree)) {
+    const target = join(dir, path);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(
+      target,
+      typeof content === "string" ? content : `${JSON.stringify(content, null, 2)}\n`,
+    );
   }
-  if (opts.enforced === true) {
-    mkdirSync(join(dir, ".agentvibes"), { recursive: true });
-    writeFileSync(join(dir, ".agentvibes", "project.toml"), '[biome]\npreset = "enforced"\n');
+  return dir;
+}
+
+function loadFixtures(): Fixture[] {
+  const out: Fixture[] = [];
+  for (const kind of ["valid", "invalid"] as const) {
+    for (const file of readdirSync(join(FIXTURES, kind)).sort()) {
+      if (!file.endsWith(".json")) continue;
+      const base = file.replace(/\.json$/, "");
+      out.push({
+        name: `${kind}/${base}`,
+        expectKey: kind === "valid" ? undefined : base.split("--")[0],
+        dir: materialise(join(FIXTURES, kind, file)),
+      });
+    }
   }
-  return { dir };
+  return out;
 }
 
 function run(cwd: string, command: string): { status: number; out: string } {
@@ -94,182 +75,105 @@ function expectStep(step: string, ok: boolean, detail: string): boolean {
   return true;
 }
 
+function checkFixture(f: Fixture): boolean {
+  const findings = presetDrift(f.dir);
+  const shown = JSON.stringify(findings, null, 2);
+  const verify = run(f.dir, "verify");
+  const doctor = run(f.dir, "doctor");
+  if (f.expectKey === undefined) {
+    return (
+      expectStep(`${f.name}: no drift`, findings.length === 0, shown) &&
+      expectStep(
+        `${f.name}: verify exits 0`,
+        verify.status === 0 && !verify.out.includes("biome preset drift"),
+        `exit ${verify.status}\n${verify.out}`,
+      ) &&
+      expectStep(
+        `${f.name}: doctor prints "no drift" and exits 0`,
+        doctor.status === 0 && doctor.out.includes("biome preset  no drift"),
+        `exit ${doctor.status}\n${doctor.out}`,
+      )
+    );
+  }
+  return (
+    expectStep(
+      `${f.name}: drift with key "${f.expectKey}"`,
+      findings.some((x) => x.key === f.expectKey),
+      shown,
+    ) &&
+    expectStep(
+      `${f.name}: verify exits 2 and names the drift`,
+      verify.status === 2 && verify.out.includes("biome preset drift"),
+      `exit ${verify.status}\n${verify.out}`,
+    ) &&
+    expectStep(
+      `${f.name}: doctor exits 1 and prints DRIFT`,
+      doctor.status === 1 && doctor.out.includes("biome preset  DRIFT"),
+      `exit ${doctor.status}\n${doctor.out}`,
+    )
+  );
+}
+
 function main(): number {
-  const repos: Repo[] = [];
-  const make = (o: Parameters<typeof makeRepo>[0]): Repo => {
-    const r = makeRepo(o);
-    repos.push(r);
-    return r;
-  };
+  const fixtures = loadFixtures();
   try {
     let ok = true;
-
-    // ── detection, key by key ────────────────────────────────────────────
-    const conforming = make({ biome: CONFORMING });
+    const kinds = new Set(fixtures.filter((f) => f.expectKey).map((f) => f.expectKey));
     ok =
       expectStep(
-        "a conforming config reports no drift (extends + files + noConsole override)",
-        presetDrift(conforming.dir).length === 0,
-        JSON.stringify(presetDrift(conforming.dir), null, 2),
+        "fixtures cover all five drift keys",
+        ["extends", "own-keys", "overrides", "extra-config", "no-root-config"].every((k) =>
+          kinds.has(k),
+        ),
+        [...kinds].join(", "),
       ) && ok;
 
-    const noBiome = make({});
-    ok =
-      expectStep(
-        "a repo with no biome config at all reports no drift",
-        presetDrift(noBiome.dir).length === 0,
-        JSON.stringify(presetDrift(noBiome.dir), null, 2),
-      ) && ok;
+    for (const f of fixtures) ok = checkFixture(f) && ok;
 
-    const noExtends = make({ biome: NO_EXTENDS });
+    // The message has to name WHAT drifted, not only that something did.
+    const byName = (n: string): Fixture | undefined => fixtures.find((f) => f.name === n);
+    const own = byName("invalid/own-keys--restates-preset");
+    const ownDetail = own
+      ? (presetDrift(own.dir).find((x) => x.key === "own-keys")?.detail ?? "")
+      : "";
     ok =
       expectStep(
-        "(a) a config that does not extend the preset is drift",
-        presetDrift(noExtends.dir).some((f) => f.key === "extends"),
-        JSON.stringify(presetDrift(noExtends.dir), null, 2),
-      ) && ok;
-
-    const ownKeys = make({ biome: OWN_KEYS });
-    const ownDetail = presetDrift(ownKeys.dir).find((f) => f.key === "own-keys")?.detail ?? "";
-    ok =
-      expectStep(
-        "(b) formatter, linter, assist, javascript.formatter and json.formatter are all named",
+        "own-keys names formatter, linter, assist, javascript.formatter and json.formatter",
         ["formatter", "linter", "assist", "javascript.formatter", "json.formatter"].every((k) =>
           ownDetail.includes(k),
         ),
         ownDetail,
       ) && ok;
-
-    const wide = make({ biome: WIDE_OVERRIDE });
-    const wideDetail = presetDrift(wide.dir).find((f) => f.key === "overrides")?.detail ?? "";
+    const wide = byName("invalid/overrides--other-rule");
+    const wideDetail = wide
+      ? (presetDrift(wide.dir).find((x) => x.key === "overrides")?.detail ?? "")
+      : "";
     ok =
       expectStep(
-        "(b) an override touching anything but suspicious.noConsole is drift",
+        "overrides names each offending entry by index",
         wideDetail.includes("overrides[0]") && wideDetail.includes("overrides[1].formatter"),
         wideDetail,
       ) && ok;
 
-    // The test-scoped noEmptyBlockStatements carve-out (owner's call,
-    // 2026-09-07). Three directions, because a carve-out that is not scoped is
-    // the rule switched off through a loophole.
-    const TEST_OVERRIDE = {
-      $schema: "https://biomejs.dev/schemas/2.5.10/schema.json",
-      extends: ["@agentvibes/guardrails/biome"],
-      overrides: [
-        {
-          includes: ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
-          linter: { rules: { suspicious: { noEmptyBlockStatements: "off" } } },
-        },
-      ],
-    };
-    const scoped = make({ biome: JSON.stringify(TEST_OVERRIDE) });
+    const noBiome = mkdtempSync(join(tmpdir(), "guardrails-preset-"));
+    writeFileSync(join(noBiome, "a.ts"), CLEAN_TS);
     ok =
       expectStep(
-        "(b) noEmptyBlockStatements off for test paths only is NOT drift",
-        presetDrift(scoped.dir).every((f) => f.key !== "overrides"),
-        JSON.stringify(presetDrift(scoped.dir)),
+        "a repo with no biome config at all reports no drift",
+        presetDrift(noBiome).length === 0,
+        JSON.stringify(presetDrift(noBiome)),
       ) && ok;
-
-    const unscoped = make({
-      biome: JSON.stringify({
-        ...TEST_OVERRIDE,
-        overrides: [
-          {
-            includes: ["src/**"],
-            linter: { rules: { suspicious: { noEmptyBlockStatements: "off" } } },
-          },
-        ],
-      }),
-    });
-    const unscopedDetail =
-      presetDrift(unscoped.dir).find((f) => f.key === "overrides")?.detail ?? "";
-    ok =
-      expectStep(
-        "(b) the same override on src/** IS drift — the carve-out is for tests",
-        unscopedDetail.includes("noEmptyBlockStatements"),
-        unscopedDetail,
-      ) && ok;
-
-    const mixed = make({
-      biome: JSON.stringify({
-        ...TEST_OVERRIDE,
-        overrides: [
-          {
-            includes: ["**/__tests__/**", "src/**"],
-            linter: { rules: { suspicious: { noEmptyBlockStatements: "off" } } },
-          },
-        ],
-      }),
-    });
-    const mixedDetail = presetDrift(mixed.dir).find((f) => f.key === "overrides")?.detail ?? "";
-    ok =
-      expectStep(
-        "(b) one non-test glob among the test globs IS drift",
-        mixedDetail.includes("noEmptyBlockStatements"),
-        mixedDetail,
-      ) && ok;
-
-    const second = make({ biome: CONFORMING, secondConfig: CONFORMING });
-    ok =
-      expectStep(
-        "(c) a second biome.json in the tree is drift even when both conform",
-        presetDrift(second.dir).some((f) => f.key === "extra-config"),
-        JSON.stringify(presetDrift(second.dir), null, 2),
-      ) && ok;
-
-    // ── the opt-in switch, through the CLI ───────────────────────────────
-    const unenforced = make({ biome: NO_EXTENDS });
-    const u = run(unenforced.dir, "verify");
-    ok =
-      expectStep(
-        "unenforced: verify SAYS the drift and still exits 0",
-        u.status === 0 && u.out.includes("biome preset drift") && u.out.includes("Not gated here"),
-        `exit ${u.status}\n${u.out}`,
-      ) && ok;
-
-    const enforced = make({ biome: NO_EXTENDS, enforced: true });
-    const e = run(enforced.dir, "verify");
-    ok =
-      expectStep(
-        "enforced: the same repo exits 2 with the offending keys named",
-        e.status === 2 && e.out.includes('biome.json has no "extends"'),
-        `exit ${e.status}\n${e.out}`,
-      ) && ok;
-
-    const enforcedOk = make({ biome: CONFORMING, enforced: true });
-    const eo = run(enforcedOk.dir, "verify");
-    ok =
-      expectStep(
-        "enforced + conforming: verify runs normally (exit 0, no drift line)",
-        eo.status === 0 && !eo.out.includes("biome preset drift"),
-        `exit ${eo.status}\n${eo.out}`,
-      ) && ok;
-
-    const d = run(enforced.dir, "doctor");
-    ok =
-      expectStep(
-        "enforced: doctor exits 1 and prints the drift",
-        d.status === 1 && d.out.includes("DRIFT (enforced here)"),
-        `exit ${d.status}\n${d.out}`,
-      ) && ok;
-
-    const du = run(unenforced.dir, "doctor");
-    ok =
-      expectStep(
-        "unenforced: doctor still REPORTS the drift, exit unchanged",
-        du.out.includes("drift (not enforced here yet)"),
-        `exit ${du.status}\n${du.out}`,
-      ) && ok;
+    rmSync(noBiome, { recursive: true, force: true });
 
     console.log("");
     if (!ok) {
       console.error("preset-drift assertions FAILED");
       return 1;
     }
-    console.log("preset-drift fixtures passed");
+    console.log(`preset-drift fixtures passed (${fixtures.length} fixtures)`);
     return 0;
   } finally {
-    for (const r of repos) rmSync(r.dir, { recursive: true, force: true });
+    for (const f of fixtures) rmSync(f.dir, { recursive: true, force: true });
   }
 }
 

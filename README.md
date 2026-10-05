@@ -24,8 +24,8 @@ biome refuses the whole config rather than degrading — it lints nothing and sa
 2026-09-07: of 18 repos with a readable biome, twelve were on 1.9.4.
 
 Adopting the preset, and what a repo may keep in its own `biome.json`, is
-[Presets](#presets) below — including `[biome] preset = "enforced"`, which is
-what makes drift fail a build rather than only be reported.
+[Presets](#presets) below. Drift fails `guardrails verify` (exit 2) and
+`guardrails doctor` (exit 1) in every repo, so migrate before you upgrade.
 
 Installing straight from git (`github:AgentVibes/guardrails#<sha>`) works —
 the `prepare` script builds `dist/` at install time — but pnpm blocks
@@ -217,27 +217,22 @@ line. Three things count as drift:
 | b | it extends the preset and then carries its own `formatter`, `javascript.formatter`, `json.formatter`, `linter` or `assist` | those are the preset's decisions, restated locally so they can drift |
 | c | a second `biome.json` / `biome.jsonc` exists in the tree (outside `node_modules`, `dist`, `.claude` and the other skipped dirs) | two configs means two answers |
 
-Two things stay legal, because they scope rather than restyle: `files` (a repo
-decides which of ITS paths are linted) and an `overrides` entry that only turns
-`suspicious.noConsole` off for some paths (a CLI has to print).
+Everything else stays legal, because it scopes or configures a parser rather
+than restyling: `$schema`, `files` (a repo decides which of ITS paths are
+linted), a language block such as `css.parser.tailwindDirectives`, and an
+`overrides` entry that only turns `suspicious.noConsole` off for some paths (a
+CLI has to print) or `suspicious.noEmptyBlockStatements` off for TEST paths.
+The owner ruled on 2026-10-05 (epic is-a70a5963) that a key is allowed exactly
+when this check allows it, so this list and the code are one rulebook.
 
-**Enforcement is opt-in per repo, for now.** Add
+**Drift gates everywhere.** `verify` exits 2 and `doctor` exits 1, with the
+offending keys named. Up to 0.2.4 this was opt-in through
+`[biome] preset = "enforced"` in `.agentvibes/project.toml`; that line is now
+inert and can be deleted. Valid and invalid example trees are in
+`test/preset-drift/`.
 
-```toml
-# .agentvibes/project.toml
-[biome]
-preset = "enforced"
-```
-
-and `verify` exits 2 on drift, `doctor` exits 1. Without it both still SAY the
-drift — `verify` prints it as a note, `doctor` as a `biome preset` line — and
-neither changes its exit code. The reason is sequencing, not softness: epic
-is-a70a5963 is migrating 37 configs, and 5 of the 7 repos running this gate do
-not conform yet. Each migration adds the line as its last step; when the last
-one lands, the default flips to enforced.
-
-The reusable gate workflow runs `verify-diff`, not `verify`, so a repo that opts
-in should add a `guardrails verify` (or `doctor`) step to its own CI.
+The reusable gate workflow runs `verify-diff`, not `verify`, so a repo should
+add a `guardrails doctor` (or `verify`) step to its own CI to gate drift there.
 
 ## Rules and fixtures
 
