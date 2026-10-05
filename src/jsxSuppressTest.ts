@@ -50,8 +50,9 @@ const fail = (m: string): void => {
   failed++;
 };
 
-function verify(dir: string): string {
-  const r = spawnSync("node", [join(packageRoot, "dist", "cli.js"), "verify", "."], {
+function run(dir: string, command: "verify" | "verify-diff"): string {
+  const args = command === "verify" ? ["verify", "."] : ["verify-diff"];
+  const r = spawnSync("node", [join(packageRoot, "dist", "cli.js"), ...args], {
     cwd: dir,
     encoding: "utf8",
   });
@@ -75,14 +76,19 @@ const cases: Array<[string, string, boolean, string]> = [
 for (const [name, source, expectReported, what] of cases) {
   const root = fixture(name, source);
   try {
-    const out = verify(root);
-    const reported = out.includes("classname-not-composed");
-    if (reported !== expectReported) {
-      fail(
-        `${what} — expected ${expectReported ? "a finding" : "no finding"}, got the opposite:\n${out}`,
-      );
-    } else {
-      console.log(`  ok  jsx-suppress: ${what}`);
+    // verify-diff applies the same suppressions (it once skipped this filter
+    // and gated findings verify exempts). The fixture is not a git repo, so
+    // verify-diff gates the whole tree here.
+    for (const command of ["verify", "verify-diff"] as const) {
+      const out = run(root, command);
+      const reported = out.includes("classname-not-composed");
+      if (reported !== expectReported) {
+        fail(
+          `${command}: ${what} — expected ${expectReported ? "a finding" : "no finding"}, got the opposite:\n${out}`,
+        );
+      } else {
+        console.log(`  ok  jsx-suppress (${command}): ${what}`);
+      }
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
