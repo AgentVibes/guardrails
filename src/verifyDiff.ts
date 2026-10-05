@@ -3,8 +3,15 @@ import { match } from "ts-pattern";
 import { AstGrepConfigError, scanFindings } from "./astGrep.js";
 import { type Finding, formatFinding } from "./findings.js";
 import { addedLinesByFile, changedFiles, gitRoot, resolveMergeBase } from "./gitDiff.js";
+import { dropJsxSuppressed } from "./jsxSuppress.js";
 import { rulesConfig } from "./packagePaths.js";
 import { dedupeFindings, ruleConfigs } from "./repoRules.js";
+import {
+  dropScopeExempt,
+  ScreenScopeError,
+  scopeExemptRuleIds,
+  scopePatterns,
+} from "./screenScope.js";
 import { SeverityConfigError, severityRaiseArgs } from "./severity.js";
 import { structureFindings } from "./structure.js";
 import { readTomlTable } from "./tomlTable.js";
@@ -114,10 +121,20 @@ export function runVerifyDiffCollect(cwd: string, base: string | undefined): Ver
     return { rungLabel: plan.rungLabel, filesScanned: 0, violations: [] };
   }
   const targets = plan.files ?? ["."];
-  const violations = dedupeFindings([
-    ...ruleConfigs(cwd, rulesConfig).flatMap((c) => scanFindings(c, targets, severityArgs)),
-    ...structureFindings(targets),
-  ])
+  // The same post-filters `verify` applies (collectVerifyFindings): the repo's
+  // declared scopes, then the JSX-form `{/* ast-grep-ignore */}` directive.
+  // Without them a JSX suppression that `verify` honours was gated here.
+  const violations = dropJsxSuppressed(
+    dropScopeExempt(
+      dedupeFindings([
+        ...ruleConfigs(cwd, rulesConfig).flatMap((c) => scanFindings(c, targets, severityArgs)),
+        ...structureFindings(targets),
+      ]),
+      scopePatterns(cwd),
+      scopeExemptRuleIds(),
+    ),
+    cwd,
+  )
     .filter((f) => f.severity === "error")
     .filter(plan.keep);
   return { rungLabel: plan.rungLabel, filesScanned: plan.files?.length ?? -1, violations };
@@ -128,7 +145,11 @@ export function runVerifyDiff(base: string | undefined, json: boolean): number {
   try {
     result = runVerifyDiffCollect(process.cwd(), base);
   } catch (err) {
-    if (err instanceof SeverityConfigError || err instanceof AstGrepConfigError) {
+    if (
+      err instanceof SeverityConfigError ||
+      err instanceof AstGrepConfigError ||
+      err instanceof ScreenScopeError
+    ) {
       console.error(`guardrails verify-diff: ${err.message}`);
       return 2;
     }
