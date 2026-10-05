@@ -1,0 +1,10 @@
+{
+  "biome.json": {
+    "extends": ["@agentvibes/guardrails/biome"],
+    "formatter": { "lineWidth": 80 },
+    "linter": { "rules": { "style": { "useConst": "off" } } },
+    "assist": { "enabled": false },
+    "javascript": { "formatter": { "quoteStyle": "single" } },
+    "json": { "formatter": { "indentWidth": 4 } }
+  }
+}

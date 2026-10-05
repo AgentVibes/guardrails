@@ -1,7 +1,6 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { packageRoot } from "./packagePaths.js";
-import { readTomlTable } from "./tomlTable.js";
 
 // Preset-drift guard (is-9c7a78d7). The migration epic is-a70a5963 collapses 37
 // hand-rolled biome configs into one preset; nothing stopped a repo from
@@ -20,6 +19,11 @@ import { readTomlTable } from "./tomlTable.js";
 // decides which of ITS paths are linted) and an `overrides` entry that only
 // turns `noConsole` off for some paths (a CLI has to print), or
 // `noEmptyBlockStatements` off for TEST paths (see OVERRIDABLE).
+//
+// Drift GATES in every repo: `verify` exits 2 and `doctor` exits 1, as the
+// acceptance of is-9c7a78d7 requires. Up to 0.2.4 it gated only where a repo
+// had opted in with `[biome] preset = "enforced"`; that line is now inert, and
+// a repo that has not migrated goes red the day it upgrades guardrails.
 //
 // A repo with no biome config at all is not drifting and reports nothing —
 // there is no config to have re-grown. `guardrails doctor` still shows it as
@@ -272,24 +276,6 @@ export function presetDrift(root: string): DriftFinding[] {
   }
 
   return findings;
-}
-
-/**
- * Whether drift GATES in this repo, from `[biome] preset = "enforced"` in
- * `.agentvibes/project.toml`.
- *
- * Opt-in per repo, then flipped (owner, 2026-09-06). Failing every repo the day
- * this shipped would have turned 5 of the 7 repos that run this gate red —
- * SiteCraftMonorepo, faceless-photo-lib, agent-session-observatory, tg-gallery,
- * merkle-substrate — before the migration issue for each was worked, blocking
- * unrelated work in all five. Each child of epic is-a70a5963 adds the line as
- * its last step; when the last child lands, this default flips to enforced.
- *
- * Unenforced is NOT silent: `verify` prints the drift as a note and `doctor`
- * always reports it. What the flag decides is the exit code, not the message.
- */
-export function presetEnforced(cwd: string): boolean {
-  return readTomlTable(join(cwd, ".agentvibes", "project.toml"), "biome").preset === "enforced";
 }
 
 /** The one-line message the gate prints; "" when there is no drift. */

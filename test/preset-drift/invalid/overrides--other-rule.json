@@ -1,0 +1,9 @@
+{
+  "biome.json": {
+    "extends": ["@agentvibes/guardrails/biome"],
+    "overrides": [
+      { "includes": ["src/**"], "linter": { "rules": { "style": { "useConst": "off" } } } },
+      { "includes": ["gen/**"], "formatter": { "enabled": false } }
+    ]
+  }
+}

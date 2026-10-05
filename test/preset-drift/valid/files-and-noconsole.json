@@ -1,0 +1,10 @@
+{
+  "biome.json": {
+    "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+    "extends": ["@agentvibes/guardrails/biome"],
+    "files": { "includes": ["**/*.ts", "!**/dist"] },
+    "overrides": [
+      { "includes": ["src/**"], "linter": { "rules": { "suspicious": { "noConsole": "off" } } } }
+    ]
+  }
+}
