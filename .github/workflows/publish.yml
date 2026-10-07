@@ -1,0 +1,53 @@
+# Publishes @agentvibes/guardrails to npm through trusted publishing (OIDC):
+# no npm token is stored anywhere, and no one-time code is needed. npm accepts
+# the run because the package's settings on npmjs.com name this repository and
+# this workflow file as its Trusted Publisher. Until that setting exists the
+# publish step fails with an auth error and nothing is published.
+#
+# GitHub-hosted runner on purpose: npm trusted publishing does not accept
+# self-hosted runners. The repository is public, so hosted minutes are free.
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag to publish, e.g. v0.2.6"
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: jdx/mise-action@v2
+
+      # Trusted publishing needs npm >= 11.5.1.
+      - run: npm install -g npm@latest
+
+      - run: pnpm install --frozen-lockfile
+
+      # The tag must name the version being published, so a tag can never ship
+      # a different package.json than the one it points at.
+      - name: Tag matches package.json version
+        run: |
+          tag="${{ inputs.ref || github.ref_name }}"
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "tag $tag does not match package.json $version" >&2
+            exit 1
+          fi
+
+      - run: pnpm check
+
+      - run: npm publish --access public
