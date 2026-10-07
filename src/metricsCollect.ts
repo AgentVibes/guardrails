@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import ts from "typescript";
+import type { ImportDeclaration, Node, Program } from "oxc-parser";
 import { scan } from "./astGrep.js";
 import { collectFiles } from "./fileWalk.js";
 import type {
@@ -10,6 +10,14 @@ import type {
   HookCounts,
   StoreMetrics,
 } from "./metricsTypes.js";
+import {
+  calleeName,
+  forEachChild,
+  isKind,
+  type NodeOf,
+  type ParsedFile,
+  parseFile,
+} from "./oxcAst.js";
 import { rulesConfig, structureConfig } from "./packagePaths.js";
 import { classifyLines, codeLinesInRange } from "./sourceLines.js";
 
@@ -53,45 +61,47 @@ export interface CollectedMetrics {
   inlineMapRowCount: number;
 }
 
-function parse(file: string, text: string): ts.SourceFile {
-  const kind =
-    file.endsWith(".tsx") || file.endsWith(".jsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  return ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
-}
+const FUNCTION_KINDS = [
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+  "TSDeclareFunction",
+] as const;
+type FunctionNode = NodeOf<(typeof FUNCTION_KINDS)[number]>;
 
-function lineOf(sf: ts.SourceFile, node: ts.Node): number {
-  return sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
-}
-
-function calleeName(node: ts.CallExpression): string | undefined {
-  if (ts.isIdentifier(node.expression)) return node.expression.text;
-  if (ts.isPropertyAccessExpression(node.expression)) return node.expression.name.text;
-  return undefined;
-}
+// A class field in any spelling the TypeScript AST called a PropertyDeclaration:
+// plain, `abstract`, and `accessor`.
+const CLASS_FIELD_KINDS = [
+  "PropertyDefinition",
+  "TSAbstractPropertyDefinition",
+  "AccessorProperty",
+  "TSAbstractAccessorProperty",
+] as const;
 
 /** Unwrap `observer(fn)`, `memo(observer(fn))` … down to the function itself. */
-function componentFunction(node: ts.Node): ts.SignatureDeclaration | undefined {
-  if (ts.isFunctionDeclaration(node) || ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
-    return node;
-  }
-  if (ts.isCallExpression(node) && node.arguments.length > 0) {
+function componentFunction(node: Node): FunctionNode | undefined {
+  if (isKind(node, ...FUNCTION_KINDS)) return node;
+  if (isKind(node, "CallExpression") && node.arguments.length > 0) {
     const first = node.arguments[0];
     if (first !== undefined) return componentFunction(first);
   }
   return undefined;
 }
 
-function isObserverWrapped(node: ts.Node): boolean {
-  if (!ts.isCallExpression(node)) return false;
+function isObserverWrapped(node: Node): boolean {
+  if (!isKind(node, "CallExpression")) return false;
   if (calleeName(node) === "observer") return true;
   const first = node.arguments[0];
   return first !== undefined && isObserverWrapped(first);
 }
 
-function propsCountOf(fn: ts.SignatureDeclaration | undefined): number {
-  const param = fn?.parameters[0];
-  if (param === undefined || !ts.isObjectBindingPattern(param.name)) return 0;
-  return param.name.elements.length;
+/** Destructured props of the first parameter; `({ a, b } = {})` counts too, as its binding pattern did. */
+function propsCountOf(fn: FunctionNode | undefined): number {
+  const param = fn?.params[0];
+  if (param === undefined) return 0;
+  const pattern = isKind(param, "AssignmentPattern") ? param.left : param;
+  // A parameter that is not destructured has no props to count, not an unknown count.
+  return isKind(pattern, "ObjectPattern") ? pattern.properties.length : 0;
 }
 
 interface WalkCounts {
@@ -100,7 +110,7 @@ interface WalkCounts {
   jsxMaxDepth: number;
 }
 
-function walkComponent(root: ts.Node): WalkCounts {
+function walkComponent(root: Node): WalkCounts {
   const hooks: HookCounts = { useState: 0, useEffect: 0, useMemo: 0, useCallback: 0, useRef: 0 };
   const branching: BranchingCounts = {
     match: 0,
@@ -111,102 +121,139 @@ function walkComponent(root: ts.Node): WalkCounts {
   };
   let jsxMaxDepth = 0;
 
-  const visit = (node: ts.Node, jsxDepth: number, inJsxExpr: boolean): void => {
+  const visit = (node: Node, jsxDepth: number, inJsxExpr: boolean): void => {
     let depth = jsxDepth;
     let inExpr = inJsxExpr;
-    if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) {
+    // A self-closing element is a JSXElement here; the TypeScript AST split it out.
+    if (isKind(node, "JSXElement", "JSXFragment")) {
       depth += 1;
       if (depth > jsxMaxDepth) jsxMaxDepth = depth;
       inExpr = false;
-    } else if (ts.isJsxExpression(node)) {
+    } else if (isKind(node, "JSXExpressionContainer", "JSXSpreadChild")) {
+      // `{x}` and `{...x}` were both a JsxExpression in the TypeScript AST.
       inExpr = true;
     }
 
-    if (ts.isCallExpression(node)) {
+    if (isKind(node, "CallExpression")) {
       const name = calleeName(node);
       if (name !== undefined) {
         for (const h of HOOK_NAMES) {
           if (name === h) hooks[h] += 1;
         }
-        if (name === "match" && ts.isIdentifier(node.expression)) branching.match += 1;
-        if (name === "exhaustive" && ts.isPropertyAccessExpression(node.expression)) {
+        if (name === "match" && isKind(node.callee, "Identifier")) branching.match += 1;
+        if (name === "exhaustive" && isKind(node.callee, "MemberExpression")) {
           branching.exhaustive += 1;
         }
-        if (name === "otherwise" && ts.isPropertyAccessExpression(node.expression)) {
+        if (name === "otherwise" && isKind(node.callee, "MemberExpression")) {
           branching.otherwise += 1;
         }
       }
     }
-    if (ts.isConditionalExpression(node) && inExpr) branching.ternaryInJsx += 1;
-    if (
-      ts.isBinaryExpression(node) &&
-      node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
-      inExpr
-    ) {
+    if (isKind(node, "ConditionalExpression") && inExpr) branching.ternaryInJsx += 1;
+    if (isKind(node, "LogicalExpression") && node.operator === "&&" && inExpr) {
       branching.andInJsx += 1;
     }
 
-    node.forEachChild((child) => visit(child, depth, inExpr));
+    forEachChild(node, (child) => visit(child, depth, inExpr));
   };
   visit(root, 0, false);
   return { hooks, branching, jsxMaxDepth };
 }
 
-/** Find the declaration node for a component-decl marker match (by name, then line). */
-function declNodeFor(sf: ts.SourceFile, name: string, line: number): ts.Node | undefined {
-  let byName: ts.Node | undefined;
-  let byLine: ts.Node | undefined;
-  const consider = (node: ts.Node, declName: string | undefined): void => {
-    if (declName !== name) return;
-    byName ??= node;
-    if (lineOf(sf, node) === line) byLine ??= node;
-  };
-  for (const stmt of sf.statements) {
-    if (ts.isFunctionDeclaration(stmt)) consider(stmt, stmt.name?.text);
-    if (ts.isVariableStatement(stmt)) {
-      for (const d of stmt.declarationList.declarations) {
-        if (ts.isIdentifier(d.name)) consider(d, d.name.text);
+/**
+ * A top-level statement the component-decl marker can point at, with the
+ * offset its line is read from. The TypeScript AST kept `export` / `export
+ * default` as modifiers ON the declaration, so its start was the `export`
+ * keyword; the ESTree wraps the declaration instead, so the wrapper's start is
+ * the equivalent.
+ */
+function topLevelDecls(
+  program: Program,
+): Array<{ node: Node; name: string | undefined; start: number }> {
+  const out: Array<{ node: Node; name: string | undefined; start: number }> = [];
+  for (const stmt of program.body) {
+    const start = stmt.start;
+    const decl = isKind(stmt, "ExportNamedDeclaration")
+      ? stmt.declaration
+      : isKind(stmt, "ExportDefaultDeclaration")
+        ? stmt.declaration
+        : stmt;
+    if (decl === null) continue;
+    if (isKind(decl, "FunctionDeclaration", "TSDeclareFunction")) {
+      out.push({ node: decl, name: decl.id?.name, start });
+    }
+    if (isKind(decl, "VariableDeclaration")) {
+      for (const d of decl.declarations) {
+        if (isKind(d.id, "Identifier")) out.push({ node: d, name: d.id.name, start: d.start });
       }
     }
+  }
+  return out;
+}
+
+/** Find the declaration node for a component-decl marker match (by name, then line). */
+function declNodeFor(file: ParsedFile, name: string, line: number): Node | undefined {
+  let byName: Node | undefined;
+  let byLine: Node | undefined;
+  for (const d of topLevelDecls(file.program)) {
+    if (d.name !== name) continue;
+    byName ??= d.node;
+    if (file.lineAt(d.start) === line) byLine ??= d.node;
   }
   return byLine ?? byName;
 }
 
-function fileImportedIdentifiers(sf: ts.SourceFile): number {
-  let count = 0;
-  for (const stmt of sf.statements) {
-    if (!ts.isImportDeclaration(stmt)) continue;
-    const clause = stmt.importClause;
-    if (clause === undefined) continue;
-    if (clause.name !== undefined) count += 1;
-    const bindings = clause.namedBindings;
-    if (bindings === undefined) continue;
-    if (ts.isNamespaceImport(bindings)) count += 1;
-    else count += bindings.elements.length;
-  }
-  return count;
+function importDecls(program: Program): ImportDeclaration[] {
+  return program.body.filter((stmt): stmt is ImportDeclaration =>
+    isKind(stmt, "ImportDeclaration"),
+  );
 }
 
-function importLineSet(sf: ts.SourceFile): Set<number> {
+/** Default, namespace and named bindings each count one — as the import clause's names did. */
+function fileImportedIdentifiers(program: Program): number {
+  return importDecls(program).reduce((n, stmt) => n + stmt.specifiers.length, 0);
+}
+
+function importLineSet(file: ParsedFile): Set<number> {
   const lines = new Set<number>();
-  for (const stmt of sf.statements) {
-    if (!ts.isImportDeclaration(stmt)) continue;
-    const start = sf.getLineAndCharacterOfPosition(stmt.getStart(sf)).line;
-    const end = sf.getLineAndCharacterOfPosition(stmt.getEnd()).line;
-    for (let l = start; l <= end; l++) lines.add(l + 1);
+  for (const stmt of importDecls(file.program)) {
+    const start = file.lineAt(stmt.start);
+    const end = file.lineAt(stmt.end);
+    for (let l = start; l <= end; l++) lines.add(l);
   }
   return lines;
+}
+
+/** `loading: boolean`, or an untyped class field initialised to `true` / `false`. */
+function isBooleanProgressFlag(node: Node): boolean {
+  if (isKind(node, "TSPropertySignature")) {
+    return (
+      !node.computed &&
+      isKind(node.key, "Identifier") &&
+      PROGRESS_FLAG.test(node.key.name) &&
+      node.typeAnnotation?.typeAnnotation.type === "TSBooleanKeyword"
+    );
+  }
+  if (!isKind(node, ...CLASS_FIELD_KINDS)) return false;
+  if (node.computed || !isKind(node.key, "Identifier") || !PROGRESS_FLAG.test(node.key.name)) {
+    return false;
+  }
+  const annotation = node.typeAnnotation ?? null;
+  if (annotation !== null) return annotation.typeAnnotation.type === "TSBooleanKeyword";
+  return (
+    node.value !== null && isKind(node.value, "Literal") && typeof node.value.value === "boolean"
+  );
 }
 
 // runInAction / async-method / new-Map counters moved to the canon rule ids
 // (store-no-runinaction, store-async-method, store-new-map) — see
 // collectMetrics. Only what no rule covers yet stays as a direct AST count.
-function collectStoreMetrics(sf: ts.SourceFile, store: StoreMetrics): void {
-  const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node)) {
+function collectStoreMetrics(program: Program, store: StoreMetrics): void {
+  const visit = (node: Node): void => {
+    if (isKind(node, "CallExpression")) {
       const name = calleeName(node);
       // No canon rule counts reactions yet — direct AST count until one lands.
-      if ((name === "reaction" || name === "autorun") && ts.isIdentifier(node.expression)) {
+      if ((name === "reaction" || name === "autorun") && isKind(node.callee, "Identifier")) {
         store.reactionsTotal += 1;
       }
     }
@@ -215,22 +262,10 @@ function collectStoreMetrics(sf: ts.SourceFile, store: StoreMetrics): void {
     // replaces. Declarations, not write sites: the number of flags measures
     // the state design; counting every `this.loading = …` would just scale
     // with method count.
-    if (
-      (ts.isPropertySignature(node) || ts.isPropertyDeclaration(node)) &&
-      ts.isIdentifier(node.name) &&
-      PROGRESS_FLAG.test(node.name.text) &&
-      (node.type?.kind === ts.SyntaxKind.BooleanKeyword ||
-        (ts.isPropertyDeclaration(node) &&
-          node.type === undefined &&
-          node.initializer !== undefined &&
-          (node.initializer.kind === ts.SyntaxKind.TrueKeyword ||
-            node.initializer.kind === ts.SyntaxKind.FalseKeyword)))
-    ) {
-      store.loadingBooleanShapes += 1;
-    }
-    node.forEachChild(visit);
+    if (isBooleanProgressFlag(node)) store.loadingBooleanShapes += 1;
+    forEachChild(node, visit);
   };
-  visit(sf);
+  visit(program);
 }
 
 export function collectMetrics(targets: string[]): CollectedMetrics {
@@ -276,23 +311,23 @@ export function collectMetrics(targets: string[]): CollectedMetrics {
     } catch {
       continue;
     }
-    const sf = parse(file, text);
+    const parsed = parseFile(file, text);
     const kinds = classifyLines(text);
-    const importLines = importLineSet(sf);
+    const importLines = importLineSet(parsed);
     let fileSloc = 0;
     kinds.forEach((k, i) => {
       if (k === "code" && !importLines.has(i + 1)) fileSloc += 1;
     });
 
-    collectStoreMetrics(sf, store);
+    collectStoreMetrics(parsed.program, store);
 
     const fileDecls = declsByFile.get(file) ?? [];
     let filePropsTotal = 0;
     for (const decl of fileDecls) {
       const name = decl.metaText("N") ?? "?";
-      const node = declNodeFor(sf, name, decl.startLine);
+      const node = declNodeFor(parsed, name, decl.startLine);
       if (node === undefined) continue;
-      const target = ts.isVariableDeclaration(node) ? (node.initializer ?? node) : node;
+      const target = isKind(node, "VariableDeclarator") ? (node.init ?? node) : node;
       const fn = componentFunction(target);
       const props = propsCountOf(fn);
       filePropsTotal += props;
@@ -310,7 +345,7 @@ export function collectMetrics(targets: string[]): CollectedMetrics {
       });
     }
 
-    const importedIdentifiers = fileImportedIdentifiers(sf);
+    const importedIdentifiers = fileImportedIdentifiers(parsed.program);
     files.push({
       file,
       fileSloc,
