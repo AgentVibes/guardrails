@@ -133,12 +133,13 @@ async function main(argv: string[]): Promise<number> {
     });
 }
 
+// `exitCode`, never `process.exit()`: stdout to a pipe is asynchronous, and
+// exiting outright dropped everything past the pipe's first 64 KiB of a
+// `--json` report (is-5cc188b7). Node exits with this code once stdout drains.
 try {
-  process.exit(await main(process.argv.slice(2)));
+  process.exitCode = await main(process.argv.slice(2));
 } catch (err) {
-  if (err instanceof ToolMissingError) {
-    console.error(`guardrails: ${err.message}`);
-    process.exit(2);
-  }
-  throw err;
+  if (!(err instanceof ToolMissingError)) throw err;
+  console.error(`guardrails: ${err.message}`);
+  process.exitCode = 2;
 }
