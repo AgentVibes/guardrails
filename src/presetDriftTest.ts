@@ -23,6 +23,8 @@ interface Fixture {
   /** The finding key an invalid fixture must produce; undefined for valid ones. */
   expectKey: string | undefined;
   dir: string;
+  /** Biome configs in the tree other than the root one — what extra-config must name. */
+  extraConfigs: string[];
 }
 
 /** Write one fixture tree (path → JSON value, or raw text) into a fresh temp repo. */
@@ -47,10 +49,15 @@ function loadFixtures(): Fixture[] {
     for (const file of readdirSync(join(FIXTURES, kind)).sort()) {
       if (!file.endsWith(".json")) continue;
       const base = file.replace(/\.json$/, "");
+      const path = join(FIXTURES, kind, file);
+      const tree = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
       out.push({
         name: `${kind}/${base}`,
         expectKey: kind === "valid" ? undefined : base.split("--")[0],
-        dir: materialise(join(FIXTURES, kind, file)),
+        dir: materialise(path),
+        extraConfigs: Object.keys(tree).filter(
+          (p) => p !== "biome.json" && /(^|\/)biome\.jsonc?$/.test(p),
+        ),
       });
     }
   }
@@ -110,7 +117,15 @@ function checkFixture(f: Fixture): boolean {
       `${f.name}: doctor exits 1 and prints DRIFT`,
       doctor.status === 1 && doctor.out.includes("biome preset  DRIFT"),
       `exit ${doctor.status}\n${doctor.out}`,
-    )
+    ) &&
+    // A second config is reported by PATH, wherever it sits — dist/, .git/ and
+    // .claude/ included — in both commands' output.
+    (f.expectKey !== "extra-config" ||
+      expectStep(
+        `${f.name}: verify and doctor name ${f.extraConfigs.join(", ")}`,
+        f.extraConfigs.every((p) => verify.out.includes(p) && doctor.out.includes(p)),
+        `verify:\n${verify.out}\ndoctor:\n${doctor.out}`,
+      ))
   );
 }
 

@@ -84,18 +84,15 @@ interface BiomeConfig {
   [k: string]: unknown;
 }
 
-const SKIP_DIRS = new Set([
-  "node_modules",
-  "dist",
-  "build",
-  ".next",
-  ".git",
-  "coverage",
-  ".turbo",
-  ".claude",
-]);
+// Only node_modules: a dependency's own biome.json is not this repo's config.
+// Every other directory is walked, build output and dot-directories included —
+// a config under dist/, .claude/ or .next/ is still a second config, and the
+// acceptance criterion names node_modules as the one exception (is-9c7a78d7).
+// Consequence: an agent worktree kept inside the repo (`.claude/worktrees/<n>/`)
+// carries its own biome.json and is reported locally; CI checkouts have none.
+const SKIP_DIRS = new Set(["node_modules"]);
 
-/** Every biome config in the tree, repo-root-relative, excluding SKIP_DIRS. */
+/** Every biome config in the tree, repo-root-relative, excluding node_modules. */
 export function findBiomeConfigs(root: string): string[] {
   const out: string[] = [];
   const visit = (dir: string): void => {
