@@ -11,15 +11,15 @@ on:
 
 jobs:
   check:
-    # Self-hosted Linux runner. Hosted minutes are metered and the free-plan
-    # allowance runs out mid-month; when it does, jobs stop being dispatched
-    # entirely (they end in seconds having run zero steps). Self-hosted minutes
-    # are not metered. Swap to ubuntu-latest if no self-hosted runner is up.
-    runs-on: [self-hosted, linux, x64]
+    # GitHub-hosted, never self-hosted: this repository is PUBLIC, so a pull
+    # request from anyone runs its own code in this job. On a self-hosted runner
+    # that code would run on our server (is-cf914d44). Hosted minutes are free
+    # for public repositories, so the metered-allowance outage that once moved
+    # this job to self-hosted does not apply here.
+    runs-on: ubuntu-latest
     # Bounds a job that is RUNNING, not one that is queued: GitHub's default is
-    # 6h, and these runners are shared with every other ci-runner unit on the
-    # box, so one wedged install holds a slot for six hours. Measured today on
-    # self-hosted: ci 5-10 min, gate-selftest 10-17 min, so 45 is generous.
+    # 6h, so one wedged install would burn six hours. Measured on self-hosted
+    # (before the move): ci 5-10 min, gate-selftest 10-17 min, so 45 is generous.
     # It does NOT rescue the no-runner case — a job with no matching runner sits
     # QUEUED, and queued time is not counted against this.
     timeout-minutes: 45
