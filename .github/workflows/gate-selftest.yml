@@ -17,3 +17,7 @@ jobs:
       # pnpm does not link a package's own bin into node_modules/.bin, so the
       # self-repo invokes the built CLI directly (prepare builds dist on install).
       guardrails_cmd: node dist/cli.js
+      # The reusable gate defaults to self-hosted for the private repos that call
+      # it. This repo is public, so its own self-test stays on GitHub's machines:
+      # a fork's pull request must not run code on our server (is-cf914d44).
+      runner_labels: '["ubuntu-latest"]'
