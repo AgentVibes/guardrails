@@ -215,7 +215,7 @@ line. Three things count as drift:
 |---|---|---|
 | a | `biome.json` does not list `@agentvibes/guardrails/biome` in `extends` | it is not using the preset at all |
 | b | it extends the preset and then carries its own `formatter`, `javascript.formatter`, `json.formatter`, `linter` or `assist` | those are the preset's decisions, restated locally so they can drift |
-| c | a second `biome.json` / `biome.jsonc` exists in the tree (outside `node_modules`, `dist`, `.claude` and the other skipped dirs) | two configs means two answers |
+| c | a second `biome.json` / `biome.jsonc` exists in the tree anywhere outside `node_modules` — build output (`dist`, `.next`, `coverage`) and dot-directories (`.claude`, `.git`, `.turbo`) included. An agent worktree kept inside the repo (`.claude/worktrees/<name>/`) carries its own `biome.json` and is reported when you run `verify` locally; CI checkouts have none | two configs means two answers |
 
 Everything else stays legal, because it scopes or configures a parser rather
 than restyling: `$schema`, `files` (a repo decides which of ITS paths are

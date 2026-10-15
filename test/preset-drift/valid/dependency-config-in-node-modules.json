@@ -1,0 +1,14 @@
+{
+  "biome.json": {
+    "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+    "extends": ["@agentvibes/guardrails/biome"]
+  },
+  "node_modules/some-dep/biome.json": {
+    "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+    "extends": ["@agentvibes/guardrails/biome"]
+  },
+  "packages/web/node_modules/other/biome.jsonc": {
+    "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+    "extends": ["@agentvibes/guardrails/biome"]
+  }
+}
