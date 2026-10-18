@@ -51,6 +51,12 @@ const EXPECTATIONS: Expectation[] = [
     hits: 5,
     goodSuffix: "ui-imports-app-store/src/ui/good.tsx",
   },
+  {
+    rule: "ui-imports-app-store-ts",
+    badSuffix: "ui-imports-app-store/src/ui/bad.ts",
+    hits: 5,
+    goodSuffix: "ui-imports-app-store/src/ui/good.ts",
+  },
   // wave 1: store rules. `typescript` and `tsx` are disjoint languages in
   // ast-grep, so each twin is its own rule id and needs its own executed
   // assertion — an unasserted twin is exactly the unexecuted rule the iron
@@ -154,6 +160,24 @@ const EXPECTATIONS: Expectation[] = [
     goodSuffix: "discriminator-ternary/good.tsx",
   },
   {
+    rule: "discriminator-ternary-ts",
+    badSuffix: "discriminator-ternary/bad.ts",
+    hits: 6,
+    goodSuffix: "discriminator-ternary/good.ts",
+  },
+  {
+    rule: "match-bool-to-null",
+    badSuffix: "match-bool-to-null/bad.tsx",
+    hits: 1,
+    goodSuffix: "match-bool-to-null/good.tsx",
+  },
+  {
+    rule: "match-bool-to-null-ts",
+    badSuffix: "match-bool-to-null/bad.ts",
+    hits: 2,
+    goodSuffix: "match-bool-to-null/good.ts",
+  },
+  {
     rule: "literal-union-in-component",
     badSuffix: "literal-union-in-component/components/bad.ts",
     hits: 4,
@@ -164,6 +188,12 @@ const EXPECTATIONS: Expectation[] = [
     badSuffix: "hardcoded-url-in-component/components/bad.tsx",
     hits: 4,
     goodSuffix: "hardcoded-url-in-component/components/good.tsx",
+  },
+  {
+    rule: "hardcoded-url-in-component-ts",
+    badSuffix: "hardcoded-url-in-component/components/bad.ts",
+    hits: 4,
+    goodSuffix: "hardcoded-url-in-component/components/good.ts",
   },
   // Five canon rules whose bodies were replaced by the (strictly better)
   // faceless implementations. These fixtures exist to pin the coverage the

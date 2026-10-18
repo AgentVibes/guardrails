@@ -1,0 +1,46 @@
+# ── the .ts half of `discriminator-ternary` ──────────────────────────────────────────────
+#
+# `discriminator-ternary` is `language: tsx`, so it reads `.tsx` and never `.ts` — ast-grep's
+# languages are disjoint. What it matches needs no JSX, so it can sit in a plain
+# `.ts` file just as well. Added by is-760b0b4b (owner's answer: option 1а).
+#
+# Keep this file's `severity`, `files`, `ignores`, `utils` and `rule:`
+# blocks IDENTICAL to `discriminator-ternary.yml` (`.tsx` globs spelled `.ts`),
+# with one exception: no `is-jsx` helper and no `not:` clause. The typescript
+# grammar has no JSX node kinds (ast-grep refuses the rule if they are named),
+# and a `.ts` file has no JSX branch for this rule to stand down on;
+# `pnpm test:twins` fails when they drift.
+#
+id: discriminator-ternary-ts
+language: typescript
+severity: warning
+message: |
+  A ternary branching on a discriminator field. Both arms are written, so
+  nothing breaks today — what breaks is the next variant: widen the union and
+  the `:` branch silently absorbs it, with no build error anywhere.
+    m.kind === "some" ? m.value : []
+    → match(m).with({ kind: "some" }, ({ value }) => value).with({ kind: "none" }, () => []).exhaustive()
+  Match the value, not a boolean derived from it — that is what turns adding a
+  variant into a type error.
+  Related but different: `kind-if-without-match` covers the `if` spelling, and
+  `jsx-ternary` covers ternaries that render JSX. This rule deliberately stands
+  down when a branch is JSX so the two never report the same line twice.
+  See defensive-errors Rule 1 & 2.
+  Suppressing this one needs the id you see above — `ast-grep-ignore: discriminator-ternary-ts`.
+  `discriminator-ternary` is a DIFFERENT rule (the .tsx arm) and does not cover it.
+rule:
+  all:
+    - kind: ternary_expression
+    - has:
+        field: condition
+        kind: binary_expression
+        all:
+          - has:
+              field: operator
+              regex: '^(===|!==)$'
+          - has:
+              field: left
+              kind: member_expression
+              has:
+                field: property
+                regex: '^(kind|status|state|type|provider|providerId|reason|mode|variant|tag)$'

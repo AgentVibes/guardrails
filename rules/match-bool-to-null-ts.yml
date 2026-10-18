@@ -1,0 +1,27 @@
+# ── the .ts half of `match-bool-to-null` ──────────────────────────────────────────────
+#
+# `match-bool-to-null` is `language: tsx`, so it reads `.tsx` and never `.ts` — ast-grep's
+# languages are disjoint. What it matches needs no JSX, so it can sit in a plain
+# `.ts` file just as well. Added by is-760b0b4b (owner's answer: option 1а).
+#
+# Keep this file's `severity`, `files`, `ignores`, `utils` and `rule:`
+# blocks IDENTICAL to `match-bool-to-null.yml` (`.tsx` globs spelled `.ts`);
+# `pnpm test:twins` fails when they drift.
+#
+id: match-bool-to-null-ts
+language: typescript
+severity: warning
+message: |
+  `match(cond).with(true, ...).with(false, () => null).exhaustive()` is the
+  ceremonial form of "maybe render this subtree". Use the purpose-built helper:
+    <ShowWhen cond={cond}>{() => <JSX/>}</ShowWhen>
+  ShowWhen is an observer (MobX-reactive), lazily evaluates children, and
+  communicates intent. If BOTH arms render something non-null, keep match().
+  Suppressing this one needs the id you see above — `ast-grep-ignore: match-bool-to-null-ts`.
+  `match-bool-to-null` is a DIFFERENT rule (the .tsx arm) and does not cover it.
+rule:
+  pattern: |
+    match($COND)
+      .with(true, () => $$$A)
+      .with(false, () => null)
+      .exhaustive()
