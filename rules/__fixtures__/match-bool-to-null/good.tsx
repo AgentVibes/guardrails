@@ -5,7 +5,7 @@ import { match } from "ts-pattern"
 export const Badge = ({ on }: { on: boolean }) => <ShowWhen cond={on}>{() => <span>new</span>}</ShowWhen>
 
 // Both arms render something: match() stays.
-export const Label = ({ on }: { on: boolean }) =>
+export const renderLabel = (on: boolean) =>
   match(on)
     .with(true, () => <span>on</span>)
     .with(false, () => <span>off</span>)
