@@ -122,26 +122,9 @@ const EXCEPTIONS: Record<string, Exception> = {
   },
 
   // ── Real gaps. Measured, tracked, not silently green. ───────────────────
-  "discriminator-ternary": {
-    only: "tsx",
-    kind: "gap",
-    why: "stands down when a branch is JSX, so what it matches is a plain ternary that .ts can hold too; measured 0 in .ts across the five consumer repos 2026-09-06 (is-760b0b4b)",
-  },
-  "match-bool-to-null": {
-    only: "tsx",
-    kind: "gap",
-    why: "the `match(cond).with(true, …).with(false, () => null)` pattern does not require JSX; measured 0 in .ts across the five consumer repos 2026-09-06 (is-760b0b4b)",
-  },
-  "hardcoded-url-in-component": {
-    only: "tsx",
-    kind: "gap",
-    why: "its `files:` globs already name `**/components/**/*.ts` and `**/screens/**/*.ts`, which `language: tsx` makes dead lines; measured 0 in .ts across the five consumer repos 2026-09-06 (is-760b0b4b)",
-  },
-  "ui-imports-app-store": {
-    only: "tsx",
-    kind: "gap",
-    why: "`files:` names whole directories, so the .ts files in them are unscanned; measured 0 in .ts across the five consumer repos 2026-09-06, but this rule is error-tier and its .ts arm can turn a consumer's CI red — that is a decision, not a chore (is-760b0b4b)",
-  },
+  // None open. The last four (discriminator-ternary, match-bool-to-null,
+  // hardcoded-url-in-component, ui-imports-app-store) got their `-ts` arms in
+  // is-760b0b4b.
 };
 
 /**

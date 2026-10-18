@@ -1,0 +1,40 @@
+# ── the .ts half of `hardcoded-url-in-component` ──────────────────────────────────────────────
+#
+# `hardcoded-url-in-component` is `language: tsx`, so it reads `.tsx` and never `.ts` — ast-grep's
+# languages are disjoint. What it matches needs no JSX, so it can sit in a plain
+# `.ts` file just as well. Added by is-760b0b4b (owner's answer: option 1а).
+#
+# Keep this file's `severity`, `files`, `ignores`, `utils` and `rule:`
+# blocks IDENTICAL to `hardcoded-url-in-component.yml` (`.tsx` globs spelled `.ts`);
+# `pnpm test:twins` fails when they drift.
+#
+id: hardcoded-url-in-component-ts
+language: typescript
+severity: warning
+files:
+  - '**/components/**/*.ts'
+  - '**/screens/**/*.ts'
+ignores:
+  - '**/__tests__/**'
+  - '**/*.test.ts'
+  - '**/showcase/**'
+  - '**/*.stories.ts'
+message: |
+  A hardcoded URL in a component file. The component now knows which
+  environment it is in, so it cannot be rendered in a test, a story or a second
+  deployment without editing it — and a URL that moves has to be found by grep
+  rather than changed in one place.
+  Put it in a constants module and read it from there (or from a store computed
+  when it varies at runtime). Service URLs in this codebase come from
+  the dev CLI, never a literal — see the house "No localhost" rule, which
+  also retires the legacy proxy zone for new code.
+  Documentation links and `xmlns` schema URLs are the honest exceptions;
+  suppress those with a reason.
+  Suppressing this one needs the id you see above — `ast-grep-ignore: hardcoded-url-in-component-ts`.
+  `hardcoded-url-in-component` is a DIFFERENT rule (the .tsx arm) and does not cover it.
+rule:
+  all:
+    - kind: string
+    - regex: '^["'']https?://'
+    - not:
+        regex: 'w3\.org|schema\.org|json-schema\.org'
