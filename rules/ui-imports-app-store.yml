@@ -1,10 +1,6 @@
 id: ui-imports-app-store
 language: tsx
-# warning, not error, for one release (is-760b0b4b, option 1а): the new .ts half
-# scans files no consumer repo has been checked for, and both halves must share
-# one severity (`pnpm test:twins`). Raised back to error in is-471d4c36
-# after that release; 0 findings in .ts across 29 consumer repos on 2026-10-18.
-severity: warning
+severity: error
 message: |
   A reusable UI component importing an app store. The moment it knows where the
   data comes from it stops being reusable — and the boundary is the whole point:
