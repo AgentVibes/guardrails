@@ -450,11 +450,13 @@ async function cliCases(): Promise<void> {
     // creates, switches to WAL and migrates the same file. Every run lands.
     const fresh = join(state, "fresh", "g.sqlite");
     const N = 6;
-    const codes = await Promise.all(
+    // Each child's stderr is kept: a failure that shows up only on a slow
+    // runner must name its cause in the log.
+    const results = await Promise.all(
       Array.from(
         { length: N },
         () =>
-          new Promise<number>((done) => {
+          new Promise<{ code: number; err: string }>((done) => {
             const child = spawn("node", [CLI, "verify"], {
               cwd: dir,
               env: { ...process.env, GUARDRAILS_RECORD: fresh },
@@ -464,16 +466,22 @@ async function cliCases(): Promise<void> {
             child.stderr.on("data", (d: Buffer) => {
               err += d.toString();
             });
-            child.on("close", (code) => done(err.includes("recording") ? -1 : (code ?? -2)));
+            child.on("close", (code) =>
+              done({ code: err.includes("recording") ? -1 : (code ?? -2), err }),
+            );
           }),
       ),
     );
+    const codes = results.map((r) => r.code);
     check(
       `${N} concurrent runs all recorded`,
       codes.every((c) => c === 0) &&
         rows(fresh, "SELECT id FROM runs").length === N &&
         rows(fresh, "PRAGMA user_version")[0]?.user_version === SCHEMA_VERSION,
-      JSON.stringify(codes),
+      `${JSON.stringify(codes)}\n  ${results
+        .filter((r) => r.code !== 0)
+        .map((r) => r.err.trim())
+        .join("\n  ")}`,
     );
 
     // RED: an unwritable database keeps the verdict and says so on stderr.

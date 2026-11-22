@@ -79,7 +79,8 @@ async function main(argv: string[]): Promise<number> {
   const args = [...argv];
   // `time` runs another command: everything after the first `--` is that
   // command's argv, never our flags (`time -- tsc --help` must not print our help).
-  const separator = argv[0] === "time" ? args.indexOf("--") : -1;
+  // The command is the first argument that is not --json (`--json time …`).
+  const separator = args.find((a) => a !== "--json") === "time" ? args.indexOf("--") : -1;
   const child = separator < 0 ? undefined : args.splice(separator).slice(1);
   const json = args.includes("--json");
   const filtered = args.filter((a) => a !== "--json");
@@ -121,7 +122,8 @@ async function main(argv: string[]): Promise<number> {
   const cmd = takeValueFlag("--cmd") ?? undefined;
   const gateCmd = takeValueFlag("--gate") ?? undefined;
   const max = takeValueFlag("--max") ?? undefined;
-  const metricName = takeValueFlag("--name");
+  // Only `time` owns --name: `deploy` passes its arguments to a plugin as typed.
+  const metricName = command === "time" ? takeValueFlag("--name") : undefined;
   if (metricName === null) {
     console.error("guardrails: --name requires a metric name");
     return 2;

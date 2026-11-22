@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `time`: `--name` is read only for `time`, so `guardrails deploy --name x`
+  passes `--name x` to the deploy plugin again. `guardrails --json time -- CMD`
+  also leaves the flags after `--` to CMD.
 - `guardrails time [--name N] -- CMD` runs a command, passes its output and
   exit code through, and, while recording, stores its wall-clock time as
   metric `build_ms` (or N; `projects_latest.build_ms`). A run that does not

@@ -1,6 +1,6 @@
 import "./testIsolation.js";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -99,6 +99,42 @@ function main(): number {
       "flags after -- belong to the command, not to guardrails",
       help.status === 0 && /node/.test(help.stdout) && !/guardrails —/.test(help.stdout),
       help.stdout.slice(0, 200),
+    );
+    const jsonFirst = cli(dir, ["--json", "time", "--", "node", "--help"]);
+    check(
+      "--json before the command still leaves the flags after -- to the command",
+      jsonFirst.status === 0 &&
+        /node/.test(jsonFirst.stdout) &&
+        !/guardrails —/.test(jsonFirst.stdout),
+      jsonFirst.stdout.slice(0, 200),
+    );
+    // sh, not node: node reads a --json after -e as its own option.
+    const childJson = cli(dir, ["time", "--", "sh", "-c", 'echo "$1"', "sh", "--json"]);
+    check(
+      "--json after -- reaches the command",
+      childJson.status === 0 && childJson.stdout.trim() === "--json",
+      childJson.stdout,
+    );
+    // --name belongs to `time` only; `deploy` hands its arguments to the plugin as typed.
+    const plugin = join(dir, "node_modules", "guardrails-plugin-echo");
+    mkdirSync(plugin, { recursive: true });
+    writeFileSync(
+      join(plugin, "package.json"),
+      JSON.stringify({ name: "guardrails-plugin-echo", type: "module", main: "index.js" }),
+    );
+    writeFileSync(
+      join(plugin, "index.js"),
+      "export default { name: 'echo', deploy: async (args) => { console.log(args.join(' ')); return 0; } };\n",
+    );
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "timed", devDependencies: { "guardrails-plugin-echo": "0.0.0" } }),
+    );
+    const deploy = cli(dir, ["deploy", "--name", "prod"]);
+    check(
+      "deploy receives --name and its value untouched",
+      deploy.status === 0 && deploy.stdout.trim() === "--name prod",
+      `${deploy.status} ${deploy.stdout} ${deploy.stderr}`,
     );
     check("a command without -- is a usage error", cli(dir, ["time", "node"]).status === 2);
     check("no command is a usage error", cli(dir, ["time", "--"]).status === 2);
