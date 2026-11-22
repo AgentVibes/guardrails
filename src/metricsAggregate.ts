@@ -1,5 +1,12 @@
 import type { CollectedMetrics } from "./metricsCollect.js";
-import type { GatedMetrics, HookCounts, ObservedMetrics, ProjectMetrics } from "./metricsTypes.js";
+import type {
+  GatedMetrics,
+  HookCounts,
+  LongFile,
+  ObservedMetrics,
+  ProjectMetrics,
+} from "./metricsTypes.js";
+import { DEFAULT_MAX_FILE_LINES } from "./projectConfig.js";
 
 /** Nearest-rank percentile over an unsorted sample; 0 for an empty sample. */
 export function percentile(values: number[], p: number): number {
@@ -14,8 +21,16 @@ const round = (n: number, places = 4): number => {
   return Math.round(n * f) / f;
 };
 
-export function aggregate(collected: CollectedMetrics): ProjectMetrics {
+export function aggregate(
+  collected: CollectedMetrics,
+  maxFileLines: number = DEFAULT_MAX_FILE_LINES,
+): ProjectMetrics {
   const { components, files, store, inlineMapRowCount } = collected;
+  const longFiles: LongFile[] = files
+    .filter((f) => f.lines > maxFileLines)
+    .map((f) => ({ file: f.file, lines: f.lines }))
+    .sort((x, y) => y.lines - x.lines || x.file.localeCompare(y.file));
+  const lineCounts = files.map((f) => f.lines);
   const locs = components.map((c) => c.componentLoc);
   const contextCosts = files.map((f) => f.contextCost);
   const n = components.length;
@@ -57,6 +72,7 @@ export function aggregate(collected: CollectedMetrics): ProjectMetrics {
     newMapInStore: store.newMapInStore,
     reactionsTotal: store.reactionsTotal,
     loadingBooleanShapes: store.loadingBooleanShapes,
+    filesOverLineLimit: longFiles.length,
   };
 
   const observed: ObservedMetrics = {
@@ -79,7 +95,13 @@ export function aggregate(collected: CollectedMetrics): ProjectMetrics {
       50,
     ),
     p90ContextCostObserved: percentile(contextCosts, 90),
+    maxFileLinesLimit: maxFileLines,
+    maxFileLines: lineCounts.reduce((m, n) => (n > m ? n : m), 0),
+    avgFileLines:
+      lineCounts.length === 0
+        ? 0
+        : round(lineCounts.reduce((s, n) => s + n, 0) / lineCounts.length, 1),
   };
 
-  return { gated, observed, components, files };
+  return { gated, observed, components, files, filesOverLineLimit: longFiles };
 }

@@ -268,6 +268,16 @@ function collectStoreMetrics(program: Program, store: StoreMetrics): void {
   visit(program);
 }
 
+/**
+ * Lines as a reader (and `wc -l`) counts them: a final line without a
+ * trailing newline still counts, an empty file has none.
+ */
+export function rawLineCount(text: string): number {
+  if (text === "") return 0;
+  const parts = text.split("\n").length;
+  return text.endsWith("\n") ? parts - 1 : parts;
+}
+
 export function collectMetrics(targets: string[]): CollectedMetrics {
   const allFiles = dropGitignored(
     collectFiles(targets, [".ts", ".tsx", ".jsx"]).filter((f) => !EXCLUDED_FILE.test(f)),
@@ -349,6 +359,7 @@ export function collectMetrics(targets: string[]): CollectedMetrics {
     files.push({
       file,
       fileSloc,
+      lines: rawLineCount(text),
       componentsPerFile: fileDecls.length,
       importedIdentifiers,
       contextCost: importedIdentifiers + filePropsTotal,

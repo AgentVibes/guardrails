@@ -10,7 +10,22 @@ import {
   writeBaseline,
 } from "./metricsBaseline.js";
 import { collectMetrics } from "./metricsCollect.js";
-import type { ProjectMetrics } from "./metricsTypes.js";
+import type { LongFile, ProjectMetrics } from "./metricsTypes.js";
+import { ProjectConfigError, readProjectConfig } from "./projectConfig.js";
+
+/** How many long files a text report lists before summarising the rest. */
+const LONG_FILES_SHOWN = 10;
+
+function printLongFiles(files: LongFile[], limit: number): void {
+  if (files.length === 0) return;
+  console.log(`files over ${limit} lines (${files.length}):`);
+  for (const f of files.slice(0, LONG_FILES_SHOWN)) {
+    console.log(`  ${String(f.lines).padStart(6)}  ${f.file}`);
+  }
+  if (files.length > LONG_FILES_SHOWN) {
+    console.log(`  … and ${files.length - LONG_FILES_SHOWN} more (--json lists all)`);
+  }
+}
 
 export interface MetricsOptions {
   targets: string[];
@@ -52,6 +67,10 @@ function printReport(metrics: ProjectMetrics): void {
     `  jsx branching               ternary=${observed.ternaryInJsxCount} &&=${observed.andInJsxCount}`,
   );
   console.log(`  file_sloc p50               ${observed.p50FileSloc}`);
+  console.log(
+    `  file lines avg/max          ${observed.avgFileLines}/${observed.maxFileLines}  (limit ${observed.maxFileLinesLimit})`,
+  );
+  printLongFiles(metrics.filesOverLineLimit, observed.maxFileLinesLimit);
 }
 
 export function runMetrics(opts: MetricsOptions): number {
@@ -64,7 +83,15 @@ export function runMetrics(opts: MetricsOptions): number {
   const snapshotPath = join(cwd, ".guardrails", "metrics-snapshots.jsonl");
   const targets = opts.targets.length > 0 ? opts.targets : ["."];
 
-  const metrics = aggregate(collectMetrics(targets));
+  let maxFileLines: number;
+  try {
+    maxFileLines = readProjectConfig(cwd).metrics.maxFileLines;
+  } catch (err) {
+    if (!(err instanceof ProjectConfigError)) throw err;
+    console.error(`guardrails metrics: ${err.message}`);
+    return 2;
+  }
+  const metrics = aggregate(collectMetrics(targets), maxFileLines);
   const commit = headCommit(cwd);
 
   if (opts.snapshot) {
@@ -97,6 +124,11 @@ export function runMetrics(opts: MetricsOptions): number {
         : `guardrails metrics: baseline updated at ${baselinePath}${opts.force ? " (--force: set to current values)" : ""}`,
     );
     for (const k of result.tightened) console.log(`  tightened  ${k} → ${result.next[k]}`);
+    for (const k of result.adopted) {
+      console.log(
+        `  adopted    ${k} → ${result.next[k]} (new gated metric, not in the old baseline)`,
+      );
+    }
     for (const k of result.withinHysteresis) {
       console.log(`  kept       ${k} (improved <2% — hysteresis holds the old ceiling)`);
     }
@@ -116,7 +148,7 @@ export function runMetrics(opts: MetricsOptions): number {
       );
       return 2;
     }
-    const regressions = checkAgainstBaseline(metrics.gated, baseline.gated);
+    const { regressions, notYetGated } = checkAgainstBaseline(metrics.gated, baseline.gated);
     if (opts.json) {
       console.log(
         JSON.stringify(
@@ -126,6 +158,8 @@ export function runMetrics(opts: MetricsOptions): number {
             baselinePath,
             ok: regressions.length === 0,
             regressions,
+            notYetGated,
+            filesOverLineLimit: metrics.filesOverLineLimit,
             current: metrics.gated,
             baseline: baseline.gated,
           },
@@ -134,6 +168,11 @@ export function runMetrics(opts: MetricsOptions): number {
         ),
       );
       return regressions.length === 0 ? 0 : 1;
+    }
+    for (const k of notYetGated) {
+      console.log(
+        `guardrails metrics --check: notice — ${k} is not in the baseline yet (current ${metrics.gated[k]}); not gated until \`guardrails metrics --update-baseline\` adopts it`,
+      );
     }
     if (regressions.length === 0) {
       console.log(
@@ -144,6 +183,9 @@ export function runMetrics(opts: MetricsOptions): number {
     console.log("guardrails metrics --check: RATCHET VIOLATION — gated metrics regressed:");
     for (const r of regressions) {
       console.log(`  ${r.metric.padEnd(22)} baseline ${r.baseline} → current ${r.current}`);
+    }
+    if (regressions.some((r) => r.metric === "filesOverLineLimit")) {
+      printLongFiles(metrics.filesOverLineLimit, metrics.observed.maxFileLinesLimit);
     }
     console.log(
       "Improve the code back under the baseline. Loosening the baseline itself requires\n`guardrails metrics --update-baseline --force` and belongs in a reviewed commit.",
@@ -161,6 +203,7 @@ export function runMetrics(opts: MetricsOptions): number {
           observed: metrics.observed,
           components: metrics.components,
           files: metrics.files,
+          filesOverLineLimit: metrics.filesOverLineLimit,
         },
         null,
         2,

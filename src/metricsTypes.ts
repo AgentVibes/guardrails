@@ -32,6 +32,8 @@ export interface FileMetrics {
   file: string;
   /** lines minus imports, blanks, comments */
   fileSloc: number;
+  /** raw line count, as `wc -l` sees it — what the file-length gate measures */
+  lines: number;
   componentsPerFile: number;
   importedIdentifiers: number;
   /**
@@ -71,6 +73,12 @@ export interface GatedMetrics {
   newMapInStore: number;
   reactionsTotal: number;
   loadingBooleanShapes: number;
+  /**
+   * Non-test source files longer than `[metrics] max_file_lines` raw lines
+   * (default 500). A count, so it ratchets like the others: one more long file
+   * than the baseline fails `--check`.
+   */
+  filesOverLineLimit: number;
 }
 
 export interface ObservedMetrics {
@@ -91,6 +99,17 @@ export interface ObservedMetrics {
   andInJsxCount: number;
   p50FileSloc: number;
   p90ContextCostObserved: number;
+  /** the line limit `filesOverLineLimit` was counted against */
+  maxFileLinesLimit: number;
+  /** raw lines of the longest counted file; 0 when there are none */
+  maxFileLines: number;
+  /** mean raw lines per counted file */
+  avgFileLines: number;
+}
+
+export interface LongFile {
+  file: string;
+  lines: number;
 }
 
 export interface ProjectMetrics {
@@ -98,13 +117,20 @@ export interface ProjectMetrics {
   observed: ObservedMetrics;
   components: ComponentMetrics[];
   files: FileMetrics[];
+  /** the files over the line limit, longest first */
+  filesOverLineLimit: LongFile[];
 }
 
 export interface Baseline {
   version: 1;
   updatedAt: string;
   commit: string | null;
-  gated: GatedMetrics;
+  /**
+   * Partial on read: a baseline written by an older release has no entry for a
+   * metric added since. That metric is "not yet gated" until
+   * `--update-baseline` adopts it, never compared against an implied 0.
+   */
+  gated: Partial<GatedMetrics>;
   /** informational only — --check always recomputes and never trusts this */
   observed: ObservedMetrics;
 }

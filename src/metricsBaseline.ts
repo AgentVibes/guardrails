@@ -24,6 +24,7 @@ export const GATED_KEYS: (keyof GatedMetrics)[] = [
   "newMapInStore",
   "reactionsTotal",
   "loadingBooleanShapes",
+  "filesOverLineLimit",
 ];
 
 export interface Regression {
@@ -43,16 +44,34 @@ export function readBaseline(path: string): Baseline | undefined {
   return parsed;
 }
 
-export function checkAgainstBaseline(current: GatedMetrics, baseline: GatedMetrics): Regression[] {
+export interface CheckResult {
+  regressions: Regression[];
+  /**
+   * Gated metrics the baseline has no entry for (it predates them). They are
+   * reported, not failed: reading a missing entry as 0 would turn every repo
+   * red the day it upgrades. `--update-baseline` adopts their current value.
+   */
+  notYetGated: (keyof GatedMetrics)[];
+}
+
+export function checkAgainstBaseline(
+  current: GatedMetrics,
+  baseline: Partial<GatedMetrics>,
+): CheckResult {
   const regressions: Regression[] = [];
+  const notYetGated: (keyof GatedMetrics)[] = [];
   for (const key of GATED_KEYS) {
-    const base = baseline[key] ?? 0;
+    const base = baseline[key];
+    if (base === undefined) {
+      notYetGated.push(key);
+      continue;
+    }
     const cur = current[key];
     if (cur > base + EPS + Math.abs(base) * EPS) {
       regressions.push({ metric: key, baseline: base, current: cur });
     }
   }
-  return regressions;
+  return { regressions, notYetGated };
 }
 
 export interface UpdateResult {
@@ -62,10 +81,12 @@ export interface UpdateResult {
   withinHysteresis: (keyof GatedMetrics)[];
   /** currently worse than baseline — kept the old ceiling (no silent loosening) */
   worse: (keyof GatedMetrics)[];
+  /** absent from the old baseline (added in a later release) — set to the current value */
+  adopted: (keyof GatedMetrics)[];
 }
 
 export function updateGated(
-  old: GatedMetrics | undefined,
+  old: Partial<GatedMetrics> | undefined,
   current: GatedMetrics,
   force: boolean,
 ): UpdateResult {
@@ -75,15 +96,22 @@ export function updateGated(
       tightened: force ? [] : GATED_KEYS,
       withinHysteresis: [],
       worse: [],
+      adopted: [],
     };
   }
-  const next = { ...old };
+  const next: GatedMetrics = { ...current, ...old };
   const tightened: (keyof GatedMetrics)[] = [];
   const withinHysteresis: (keyof GatedMetrics)[] = [];
   const worse: (keyof GatedMetrics)[] = [];
+  const adopted: (keyof GatedMetrics)[] = [];
   for (const key of GATED_KEYS) {
-    const base = old[key] ?? 0;
+    const base = old[key];
     const cur = current[key];
+    if (base === undefined) {
+      next[key] = cur;
+      adopted.push(key);
+      continue;
+    }
     if (cur < base * (1 - HYSTERESIS) - EPS) {
       next[key] = cur;
       tightened.push(key);
@@ -93,7 +121,7 @@ export function updateGated(
       withinHysteresis.push(key);
     }
   }
-  return { next, tightened, withinHysteresis, worse };
+  return { next, tightened, withinHysteresis, worse, adopted };
 }
 
 export function writeBaseline(

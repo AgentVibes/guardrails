@@ -54,8 +54,26 @@ All subcommands accept `--json`.
 
 Gated (ratchet, lower = better): p90 component_loc, useState density,
 inline-map-row count, p90 context-cost, runInAction count, async-in-store,
-new-Map-in-store, reactions total, loading-boolean shapes. Everything else is
-observe-only.
+new-Map-in-store, reactions total, loading-boolean shapes, files over the line
+limit. Everything else is observe-only.
+
+**File-length gate.** `filesOverLineLimit` counts non-test source files
+(`.ts`, `.tsx`, `.jsx`; tests, stories, showcase and `.d.ts` excluded, as
+for every other metric) whose RAW line count — what `wc -l` prints, blanks and
+comments included — is over the limit. The limit is 500 unless the repo sets
+
+```toml
+# .agentvibes/project.toml
+[metrics]
+max_file_lines = 500
+```
+
+It ratchets like the other gated counts: a file crossing the limit fails
+`--check` against the committed baseline, and the report lists the long files,
+longest first. A baseline written by an older release has no entry for a newly
+added metric; `--check` prints a notice and does not gate it until
+`--update-baseline` adopts its current value (reading the gap as 0 would turn
+every upgraded repo red).
 
 Counter provenance: runInAction / async-in-store / new-Map-in-store /
 inline-map-row are finding counts of the canon rules (`store-no-runinaction`,
