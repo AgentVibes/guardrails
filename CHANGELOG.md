@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- doctor, snapshot and verify recognise a checkout of this package by its
+  package.json name (`@agentvibes/guardrails`), not only when it is the
+  install that is running. Before, an installed copy run against a separate
+  checkout of this repo reported `installed`, `sgconfig-canon` and `preset` as
+  missing and counted every canon rule in `rules/` as a repo rule shadowing
+  the canon (61 extra overrides without a reason).
+- In this package's own source, the overrides inventory and `verify-diff`
+  skip `rules/__fixtures__/`: those files are rule-test inputs that violate,
+  or suppress, on purpose. Consumer repos are scanned as before (tested both
+  ways in `test:overrides`).
+- This repo is wired to itself: `pnpm lint` runs `guardrails verify-diff` and
+  `guardrails doctor` through a `guardrails` script (`node dist/cli.js`, since
+  pnpm does not link a package's own bin), and `.claude/settings.json` runs
+  the post-edit and Stop hooks the same way.
+
 ## 0.3.0 (2026-11-22)
 
 - Per-file length ratchet: files in test directories (`tests/`, `test/`,

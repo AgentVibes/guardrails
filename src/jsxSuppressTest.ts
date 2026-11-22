@@ -17,9 +17,14 @@ import { packageRoot } from "./packagePaths.js";
 //   3. it does NOT suppress a different rule on the same line
 //   4. without a `-- <why>` reason it does not apply, exactly as the line form
 
+// The directive is spliced in, so these test inputs do not themselves start a
+// line with it: the overrides inventory would otherwise count them as this
+// repo's own suppressions.
+const IGNORE = ["ast-grep", "ignore"].join("-");
+
 const WITH = `export const A = ({ v }: { v: string }) => (
   <div>
-    {/* ast-grep-ignore: classname-not-composed -- the fonts are CSS variables, not variants */}
+    {/* ${IGNORE}: classname-not-composed -- the fonts are CSS variables, not variants */}
     <span className={\`base \${v}\`}>x</span>
   </div>
 );
@@ -32,14 +37,14 @@ const WITHOUT = `export const B = ({ v }: { v: string }) => (
 `;
 const WRONG_RULE = `export const C = ({ v }: { v: string }) => (
   <div>
-    {/* ast-grep-ignore: inline-map-row -- names a different rule than the one that fires */}
+    {/* ${IGNORE}: inline-map-row -- names a different rule than the one that fires */}
     <span className={\`base \${v}\`}>x</span>
   </div>
 );
 `;
 const NO_REASON = `export const D = ({ v }: { v: string }) => (
   <div>
-    {/* ast-grep-ignore: classname-not-composed */}
+    {/* ${IGNORE}: classname-not-composed */}
     <span className={\`base \${v}\`}>x</span>
   </div>
 );

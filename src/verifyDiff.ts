@@ -14,7 +14,7 @@ import {
 import { dropJsxSuppressed } from "./jsxSuppress.js";
 import { OverrideConfigError } from "./overrideDeclarations.js";
 import { collectOverrides } from "./overrides.js";
-import { rulesConfig } from "./packagePaths.js";
+import { ruleFixtureFilter, rulesConfig } from "./packagePaths.js";
 import type { RunCollector } from "./record/record.js";
 import { dedupeFindings, ruleConfigs } from "./repoRules.js";
 import {
@@ -147,6 +147,10 @@ export function runVerifyDiffCollect(cwd: string, base: string | undefined): Ver
     // '^packages/site-chrome/') is written against repo-root-relative ones.
     plan.files = plan.files.filter((f) => !exclude.test(relative(cwd, f)));
   }
+  // In this package's own source, rule fixtures violate on purpose; a rule
+  // change that edits `bad.ts` must not turn its own lint red.
+  const isRuleFixture = ruleFixtureFilter(cwd);
+  if (plan.files !== undefined) plan.files = plan.files.filter((f) => !isRuleFixture(f));
   // Judged per file, so appended after the per-line `keep` filter: a size
   // finding sits at line 1, which is rarely an added line.
   const sizeViolations = fileSlocFindings(cwd, plan.size, exclude);
@@ -169,6 +173,7 @@ export function runVerifyDiffCollect(cwd: string, base: string | undefined): Ver
     cwd,
   )
     .filter((f) => f.severity === "error")
+    .filter((f) => !isRuleFixture(f.file))
     .filter(plan.keep);
   return {
     rungLabel: plan.rungLabel,

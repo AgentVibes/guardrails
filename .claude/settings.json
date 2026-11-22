@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "pnpm -s guardrails hook-postedit" }]
+      }
+    ],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "pnpm -s guardrails hook-stop" }] }]
+  }
+}

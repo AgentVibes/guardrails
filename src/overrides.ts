@@ -10,7 +10,7 @@ import {
   readOverrideDeclarations,
   samePaths,
 } from "./overrideDeclarations.js";
-import { packageRoot, rulesDir } from "./packagePaths.js";
+import { packageRoot, ruleFixtureFilter, rulesDir } from "./packagePaths.js";
 import { readBiomeRoot } from "./presetDrift.js";
 import { declaredRuleDirs, repoRuleConfig } from "./repoRules.js";
 import { SCOPES } from "./screenScope.js";
@@ -107,6 +107,10 @@ function rel(root: string, path: string): string {
 
 function inlineOverrides(root: string, targets: string[]): Override[] {
   const out: Override[] = [];
+  // In this package's own source, a suppression in a rule fixture proves the
+  // suppression works (`good.ts` stays clean BECAUSE of it); it is not a place
+  // where the repo weakens the canon.
+  const isRuleFixture = ruleFixtureFilter(root);
   // Gitignored files (generated code, local build output) are not the
   // project's source, so a suppression in them is not the project's override.
   const files = dropGitignored(
@@ -115,7 +119,7 @@ function inlineOverrides(root: string, targets: string[]): Override[] {
       SOURCE_EXTS,
     ),
     root,
-  );
+  ).filter((f) => !isRuleFixture(f));
   for (const file of files) {
     let text: string;
     try {

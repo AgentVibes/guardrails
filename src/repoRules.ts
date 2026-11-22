@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { packageRoot } from "./packagePaths.js";
+import { join } from "node:path";
+import { isPackageSource } from "./packagePaths.js";
 
 // Repo-local rules. `guardrails init` writes an `sgconfig.yml`
 // into the consuming repo and the README tells people to add a second
@@ -27,11 +27,13 @@ export class RepoConfigError extends Error {}
 /**
  * The consuming repo's own `sgconfig.yml`, or undefined when there is none.
  *
- * Returns undefined when `cwd` IS this package: scanning our own config twice
- * would double every finding in our own fixtures and tests.
+ * Returns undefined when `cwd` IS this package's source (the running install
+ * or any checkout of it, isPackageSource): its sgconfig.yml lists the canon
+ * itself, so reading it as a consumer's config would double every finding and
+ * report every canon rule as a repo rule shadowing the canon.
  */
 export function repoRuleConfig(cwd: string): string | undefined {
-  if (resolve(cwd) === resolve(packageRoot)) return undefined;
+  if (isPackageSource(cwd)) return undefined;
   const path = join(cwd, "sgconfig.yml");
   if (!existsSync(path)) return undefined;
   return path;
