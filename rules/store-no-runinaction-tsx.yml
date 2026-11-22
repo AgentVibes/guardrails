@@ -24,7 +24,7 @@
 #
 # Note the callee is matched as an identifier rather than with
 # `pattern: makeAutoObservable($$$)`. A pattern does not match a call carrying
-# explicit type arguments, and SiteCraft writes
+# explicit type arguments, and a site-builder repo writes
 # `makeAutoObservable<this, '_buildTimer' | 'buildManager'>(this, {…})` — which
 # silently cost the whole of project.store.ts, 7 real call sites, until the
 # count came up short against the grep.
@@ -33,7 +33,7 @@ language: tsx
 severity: error
 ignores:
   # A test may drive a store's state directly to set up a scenario; that is the
-  # sanctioned way to test a store without a render. All 6 of tg-gallery's
+  # sanctioned way to test a store without a render. All 6 of a gallery app's
   # runInAction sites are tests, which is why the report counts it as 0.
   - '**/*.test.tsx'
   - '**/*.spec.tsx'

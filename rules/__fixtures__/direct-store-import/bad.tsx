@@ -4,7 +4,7 @@
 // type-switches on the implementation instead of receiving a model.
 import { GalleryStore } from "../../stores/galleryStore"
 
-// A slice-store singleton. `rootStore` at a screen is legal (decision D1);
+// A slice-store singleton. `rootStore` at a screen is legal;
 // reaching past it for one slice is not.
 import { galleryStore } from "../../stores/galleryStore"
 

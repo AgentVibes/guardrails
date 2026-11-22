@@ -64,7 +64,7 @@ interface Plan {
 
 /**
  * `[verify] exclude = "<regex>"` in .agentvibes/project.toml — a VENDORED-tree
- * carve-out, ported from merkle's check-diff.sh: a verbatim copy of somebody
+ * carve-out, ported from a consumer's check-diff.sh: a verbatim copy of somebody
  * else's package must not be held to this repo's rules (editing it to satisfy
  * them would turn the next upstream re-sync into a merge conflict and falsify
  * the byte-identical provenance that is the reason to vendor). The regex tests

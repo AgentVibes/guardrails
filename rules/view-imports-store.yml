@@ -6,16 +6,15 @@
 #
 # Report §9 fixes the view contract as props → JSX and nothing else: no hooks, no
 # `match`, no data transformation, no store. That is stricter than the rest of
-# `.tsx`, where decision D1 makes a `rootStore` import legal at screen level — a
+# `.tsx`, where the house store layout makes a `rootStore` import legal at screen level — a
 # view is never a screen, so `rootStore` is banned here too, and so is `useStore`.
 #
-# The only store-path import a view may keep is a type: C40 has the view take
+# The only store-path import a view may keep is a type: the view-model contract has the view take
 # `model={store}` typed by `IXxxModel`, which lives in the store module and
 # erases at build time.
 #
 # Expected hit count today: zero. `*.view.tsx` does not exist anywhere in the
-# park yet (the two-tier split ships as a recommendation first, report §9 /
-# decision #8). This is a guardrail waiting at the convention's door, not a
+# park yet (the two-tier split ships as a recommendation first, see the simple-components skill). This is a guardrail waiting at the convention's door, not a
 # finding about current code.
 id: view-imports-store
 language: tsx
@@ -49,7 +48,7 @@ message: |
   Unlike the rest of the app, the global `rootStore` is not an exception here:
   a view is never a screen.
   `import type { IXxxModel }` IS allowed — typing the view against the model
-  interface it renders is the prescribed shape (C40). See report §9 and the
+  interface it renders is the prescribed shape. See the
   mobx-components skill.
 rule:
   all:

@@ -6,9 +6,8 @@ import { dirname, join } from "node:path";
 import { packageRoot } from "./packagePaths.js";
 import { presetDrift } from "./presetDrift.js";
 
-// Fixtures for the preset-drift guard (is-9c7a78d7). The migration epic
-// is-a70a5963 collapses 37 hand-rolled biome configs into one preset; this is
-// what stops a repo re-growing its own afterwards.
+// Fixtures for the preset-drift guard. Consumers moved from 37 hand-rolled
+// biome configs to one preset; this is what stops a repo re-growing its own afterwards.
 //
 // The fixtures live in test/preset-drift/ (see its README): `valid/` must pass,
 // `invalid/<key>--<name>.json` must report drift with that finding key. Every

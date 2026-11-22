@@ -1,4 +1,4 @@
-// BAD: the whole context channel D1 removes — provider, hook, null-check.
+// BAD: the whole context channel the house store layout removes — provider, hook, null-check.
 import { createContext, useContext } from "react";
 
 type RootStore = { readonly ready: boolean };

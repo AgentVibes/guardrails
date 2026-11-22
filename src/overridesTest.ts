@@ -176,7 +176,7 @@ function main(): number {
       ),
       noReason,
     );
-    // Owner rule: an override is a warning even WITH a reason.
+    // Policy: an override is a warning even WITH a reason.
     const overridden = report.findings.filter((f) => f.rule === CANON_OVERRIDDEN);
     expect(
       "every override, reasoned or not, is a canon-overridden warning",

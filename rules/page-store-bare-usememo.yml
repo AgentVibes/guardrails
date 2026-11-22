@@ -26,7 +26,7 @@ message: |
   It ships in `@agentvibes/kit/react`. Pass dependencies to the constructor
   explicitly so the store stays testable with `new GalleryPageStore(fake, "x")`
   and no render at all.
-  See the simple-components skill (§store access) and report §8.
+  See the simple-components skill (§store access).
 rule:
   all:
     - kind: call_expression

@@ -9,7 +9,7 @@ export const SessionsList = observer(() => {
   return <div>{data.sessions.length} sessions, tab {ui.tab}</div>
 })
 
-// Wrapped named function expression — the shape tg-gallery uses.
+// Wrapped named function expression — the shape a gallery app uses.
 export const GalleryEmptyStateView = observer(function GalleryEmptyStateView({
   title,
 }: {
@@ -54,7 +54,7 @@ export const ModelDebugLabel = ({ model }: { model: unknown }) => (
 
 // Pulls the store ONLY to call a stable action from a handler. Nothing is read
 // during render, so nothing needs subscribing and the parent observer owns the
-// page. Observatory writes two of these on purpose (`RichEntityListView`,
+// page. A session-viewer app writes two of these on purpose (`RichEntityListView`,
 // `KanbanView`) with a comment saying exactly this.
 export const OpenEntityButton = ({ id, label }: { id: string; label: string }) => {
   const { ui } = useStore()

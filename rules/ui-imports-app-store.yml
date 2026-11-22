@@ -40,7 +40,7 @@ rule:
         stopBy: end
         kind: string_fragment
         regex: '(^|/)stores?(/|$)'
-    # X7 (report §2): the view-model pattern this rule exists to protect tells a
+    # The view-model pattern this rule exists to protect tells a
     # UI component to type itself against `IXxxModel` — which lives in the store
     # module. Firing at `error` on that import made the rule contradict the
     # pattern it enforces, so a compliant component could not be written without

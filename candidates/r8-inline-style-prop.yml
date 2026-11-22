@@ -5,9 +5,9 @@ message: |
   R8 — Inline style={{}} prop. Prefer NativeWind className for static
   values (color, spacing, layout, radius). Reserve style={{}} for
   genuinely dynamic values: animated transforms, computed widths/positions.
-  See <vault>/_agent/Notes/2026-05-03-code-quality-rules.md R8.
+  Origin: rule R8 of the 2026-05-03 code-quality audit.
 files:
-  - "apps/ppa/components/**/*.tsx"
+  - "apps/<app>/components/**/*.tsx"
 rule:
   kind: jsx_attribute
   regex: '^style=\{\{'

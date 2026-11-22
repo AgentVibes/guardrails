@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { packageRoot } from "./packagePaths.js";
 
-// `--json` read through a pipe must arrive whole (is-5cc188b7). The CLI used to
+// `--json` read through a pipe must arrive whole. The CLI used to
 // end with `process.exit(code)`; stdout to a pipe is asynchronous in Node, so
 // everything past the first 64 KiB the pipe buffer took was dropped — measured
 // `metrics --json . | wc -c` = 65536 against 128389 bytes redirected to a file.

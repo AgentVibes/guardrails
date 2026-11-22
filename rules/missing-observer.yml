@@ -26,7 +26,7 @@
 #
 # Known false-positive class, accepted at warning tier: a `use…Store` hook can
 # return non-observable services next to the stores — `const { platform } =
-# useStore()` in tg-gallery's ShareButton pulls a platform adapter, and a
+# useStore()` in a gallery app's ShareButton pulls a platform adapter, and a
 # component reading only that does not strictly need the wrap. Wrapping it is
 # harmless; the rule does not distinguish.
 id: missing-observer
@@ -55,7 +55,7 @@ utils:
   # Every name a store hook can introduce, in the three spellings the park uses.
   # Binding these is what lets the rule tell `ui.groupBy` (a plain `UIManifest`
   # prop) apart from `uiStore.x` (the store) — without it the rule fires on any
-  # dotted value in the markup, which is how observatory's deliberately-plain
+  # dotted value in the markup, which is how a session-viewer app's deliberately-plain
   # `RichEntityListView` got flagged for rendering `groupBy={ui.groupBy}`.
   store-binding:
     any:
@@ -97,8 +97,8 @@ utils:
   #
   # Stated as an exclusion of the two deferred positions rather than as "appears
   # inside JSX", because real components mostly do NOT dereference the store in
-  # the markup: tg-gallery's GalleryView reads `const layoutType =
-  # themeStore.layout.type` and `match(galleryStore.detailState)`, observatory's
+  # the markup: a gallery app's GalleryView reads `const layoutType =
+  # themeStore.layout.type` and `match(galleryStore.detailState)`, a session-viewer app's
   # SessionsTreeSection reads `data.sessions.filter(...)` — all render reads,
   # none of them inside a JSX expression. An "inside JSX" test missed every one.
   # The test is structural: a read sitting inside a NESTED function is deferred,
@@ -152,7 +152,7 @@ rule:
         matches: jsx-node
     # The component must RENDER a field off something the store gave it. Both
     # halves matter: a component that pulls a store only to call an action from
-    # a handler needs no wrap (observatory writes two of those on purpose), and
+    # a handler needs no wrap (a session-viewer app writes two of those on purpose), and
     # a dotted value in the markup means nothing unless the dotted thing came
     # from a store. `$SLICE` ties the two clauses together.
     - any:

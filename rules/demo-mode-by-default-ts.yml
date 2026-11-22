@@ -20,11 +20,11 @@
 #
 # A fixture/demo/mock source chosen as the DEFAULT data source.
 #
-# The failure this encodes: apps/substrate-app shipped with
+# The failure this encodes: an issue-tracker web app shipped with
 #   function initialState(boot, narrow): State { … mode: { kind: "demo" }, … }
 # so the deployed site always opened on in-memory fixtures that accepted writes
-# and forgot them at reload. The owner worked in it for days and lost the issues
-# he had filed (2026-08-07).
+# and forgot them at reload. Its user worked in it for days and lost the issues
+# they had filed (2026-08-07).
 #
 # Scoped deliberately narrow — only the positions that decide what the app STARTS
 # on: an `initialState`-family function, a DEFAULT_/INITIAL_ binding, or the
@@ -33,10 +33,9 @@
 # excluded.
 #
 # Validated against the real pre-fix store.tsx: 1 hit at the exact declaration,
-# 0 on the fixed version, 0 across substrate-app, tg-gallery webapp and
-# agent-workbench web.
+# 0 on the fixed version, 0 across three other web apps.
 #
-# 2026-09-06 (is-9e66ec5a): the value matcher was widened to accept
+# 2026-09-06: the value matcher was widened to accept
 # `as const` / `as <Type>` / `satisfies <Type>` around the literal. This is an
 # error-tier rule, so the widening was measured before landing: 0 new findings
 # in the seven repos that run this gate, and 0 across every repo under
@@ -59,7 +58,7 @@ rule:
         field: key
         regex: '^(kind|mode|backend|source|dataSource|driver|adapter|transport|client)$'
     # The literal, optionally wrapped in `as const` / `as Mode` /
-    # `satisfies Mode` (is-9e66ec5a). Without the tail, `{ kind: "demo" }` was
+    # `satisfies Mode`. Without the tail, `{ kind: "demo" }` was
     # a finding and `{ kind: "demo" as const }` was not — and `as const` is the
     # spelling people reach for precisely when the object has no type
     # annotation to carry the literal type. DataSpool's retired local

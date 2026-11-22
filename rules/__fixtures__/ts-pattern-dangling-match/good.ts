@@ -9,8 +9,8 @@ export function label(r: Resource<string>): string {
 }
 
 // `.otherwise()` and `.run()` terminate a chain too. Whether `.exhaustive()`
-// should be PREFERRED over `.otherwise()` is a separate question the owner has
-// deferred (decision #4); this rule is only about a chain that ends nowhere.
+// should be PREFERRED over `.otherwise()` is a separate, open question;
+// this rule is only about a chain that ends nowhere.
 export function label2(r: Resource<string>): string {
   return match(r).with({ kind: "idle" }, () => "idle").otherwise(() => "?")
 }

@@ -13,7 +13,7 @@ jobs:
   check:
     # GitHub-hosted, never self-hosted: this repository is PUBLIC, so a pull
     # request from anyone runs its own code in this job. On a self-hosted runner
-    # that code would run on our server (is-cf914d44). Hosted minutes are free
+    # that code would run on our server. Hosted minutes are free
     # for public repositories, so the metered-allowance outage that once moved
     # this job to self-hosted does not apply here.
     runs-on: ubuntu-latest

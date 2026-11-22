@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname } from "node:path";
 import type { Baseline, GatedMetrics, ObservedMetrics } from "./metricsTypes.js";
 
-// Ratchet mechanics (D7). Direction for every gated metric is LOWER = BETTER.
+// Ratchet mechanics. Direction for every gated metric is LOWER = BETTER.
 // `--check` always RECOMPUTES the facts and compares against the committed
 // baseline file — it never believes the file's own numbers. Tightening happens
 // only through `--update-baseline`, and only when a metric improved by more

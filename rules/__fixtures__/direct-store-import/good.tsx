@@ -1,9 +1,9 @@
 // NOTHING in this file may be reported by `direct-store-import`.
 
-// D1: the global rootStore imported at a screen is legal.
+// The global rootStore imported at a screen is legal.
 import { rootStore } from "../../stores/rootStore"
 
-// Type-only imports are the view-model contract (C40), not a store dependency.
+// Type-only imports are the view-model contract, not a store dependency.
 import type { IGalleryModel } from "../../stores/galleryStore"
 import type { RootStore } from "../../stores/rootStore"
 import type Photo from "../../stores/photo"

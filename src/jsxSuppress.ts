@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { Finding } from "./findings.js";
 
-// JSX suppressions (found while migrating gramforge/gramforge, is-18ff62fb).
+// JSX suppressions (found while migrating a consumer monorepo).
 //
 // ast-grep's own `// ast-grep-ignore: <rule> -- <why>` is a line comment on the
 // preceding line. That works everywhere in `.ts`, and in the parts of a `.tsx`

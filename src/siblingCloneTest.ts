@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { packageRoot } from "./packagePaths.js";
 
-// The gate's sibling-repo clone, run for real (is-8774fe0e). A self-hosted
+// The gate's sibling-repo clone, run for real. A self-hosted
 // runner keeps its _work directory between jobs and `actions/checkout` cleans
 // only its own path, so the leftover `repos/<owner>/<name>` from the previous
 // run made `git clone` exit 128 — and because that step sits before install,
@@ -134,7 +134,7 @@ try {
   {
     const ws = join(base, "ws-twice");
     mkdirSync(ws, { recursive: true });
-    const first = runStep(ws, "byoklab/components", "byoklab/tg-gallery", script, bin);
+    const first = runStep(ws, "acme/components", "acme/app", script, bin);
     if (first.status !== 0) {
       fail(`first run on a clean workspace exited ${first.status}: ${first.out.trim()}`);
     } else {
@@ -142,8 +142,8 @@ try {
     }
     // The leftover the runner keeps, plus a file that must NOT survive: a
     // sibling left from last week is a stale answer, not a cheap one.
-    writeFileSync(join(ws, "repos", "byoklab", "components", "STALE"), "last week\n");
-    const second = runStep(ws, "byoklab/components", "byoklab/tg-gallery", script, bin);
+    writeFileSync(join(ws, "repos", "acme", "components", "STALE"), "last week\n");
+    const second = runStep(ws, "acme/components", "acme/app", script, bin);
     if (second.status !== 0) {
       fail(
         `second run on the same workspace exited ${second.status} — the leftover clone is still fatal: ${second.out.trim()}`,
@@ -153,7 +153,7 @@ try {
         "  ok  sibling-clone: second run on the SAME dirty workspace clones (was exit 128)",
       );
     }
-    const left = readdirSync(join(ws, "repos", "byoklab", "components"));
+    const left = readdirSync(join(ws, "repos", "acme", "components"));
     if (left.includes("STALE")) {
       fail("the second run reused last run's tree — a stale sibling is a wrong gate answer");
     } else if (!left.includes("CLONED")) {
@@ -167,9 +167,9 @@ try {
   {
     const ws = join(base, "ws-many");
     mkdirSync(ws, { recursive: true });
-    const many = "byoklab/components byoklab/dam";
-    runStep(ws, many, "byoklab/tg-gallery", script, bin);
-    const again = runStep(ws, many, "byoklab/tg-gallery", script, bin);
+    const many = "acme/components acme/dam";
+    runStep(ws, many, "acme/app", script, bin);
+    const again = runStep(ws, many, "acme/app", script, bin);
     if (again.status !== 0) {
       fail(`the second run with two siblings exited ${again.status}: ${again.out.trim()}`);
     } else {
@@ -181,10 +181,10 @@ try {
   // holds this run's own checkout, and the step now removes what it clones.
   {
     const ws = join(base, "ws-self");
-    const own = join(ws, "repos", "byoklab", "tg-gallery");
+    const own = join(ws, "repos", "acme", "app");
     mkdirSync(own, { recursive: true });
     writeFileSync(join(own, "package.json"), "{}\n");
-    const r = runStep(ws, "byoklab/tg-gallery", "byoklab/tg-gallery", script, bin);
+    const r = runStep(ws, "acme/app", "acme/app", script, bin);
     if (r.status === 0) {
       fail("listing the repo under test as its own sibling was accepted");
     } else if (readdirSync(own).length === 0) {
@@ -196,10 +196,10 @@ try {
 
   // 4 — an entry that is not owner/name is refused rather than turned into a
   // path. `..` is the one that walks out of the workspace under rm -rf.
-  for (const bad of ["byoklab/components/../../..", "/etc", "notapair", "a/b/c"]) {
+  for (const bad of ["acme/components/../../..", "/etc", "notapair", "a/b/c"]) {
     const ws = join(base, `ws-bad-${Buffer.from(bad).toString("hex")}`);
     mkdirSync(ws, { recursive: true });
-    const r = runStep(ws, bad, "byoklab/tg-gallery", script, bin);
+    const r = runStep(ws, bad, "acme/app", script, bin);
     if (r.status === 0) {
       fail(`sibling_repos entry ${JSON.stringify(bad)} was accepted`);
     } else {

@@ -47,7 +47,7 @@ export function runVerify(targets: string[], json: boolean, run: RunCollector): 
   const paths = targets.length > 0 ? targets : ["."];
   const scope = scopeOf(paths);
 
-  // Preset drift is checked FIRST (is-9c7a78d7): a repo running its own biome
+  // Preset drift is checked FIRST: a repo running its own biome
   // config is not being linted by the thing this gate reports on, so a finding
   // count from it means less than it looks. It gates in every repo.
   const drift = presetDrift(process.cwd());

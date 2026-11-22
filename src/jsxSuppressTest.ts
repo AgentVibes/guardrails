@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { packageRoot } from "./packagePaths.js";
 
-// `{/* ast-grep-ignore: <rule> -- <why> */}` (is-18ff62fb). Inside JSX children
+// `{/* ast-grep-ignore: <rule> -- <why> */}`. Inside JSX children
 // `//` is not a comment, it is text that renders, so ast-grep's own line-comment
 // form cannot be used there — and ast-grep does not recognise the bracketed
 // spelling. Findings on markup therefore had no suppression at all.

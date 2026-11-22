@@ -1,9 +1,9 @@
-# ── rule body adopted from faceless-photo-lib `no-empty-catch` (wave 2 triage) ──
-# The two rules were duplicates; the faceless implementation is strictly better,
+# ── rule body adopted from a consumer repo's `no-empty-catch` (wave 2 triage) ──
+# The two rules were duplicates; the consumer's implementation is strictly better,
 # so the canon id keeps its message and takes that body. Why it is better here:
 # the old patterns covered `catch {}` and `catch (e) {}` but NOT `catch (e:
 # unknown) {}` / `catch (e: any) {}` — the type annotation is an extra named node.
-# Measured on tg-gallery + observatory + byok + faceless: 0 files lost, 1 gained,
+# Measured on four consumer repos: 0 files lost, 1 gained,
 # and the finding now anchors on the `catch` keyword rather than the `try`.
 #
 id: catch-empty

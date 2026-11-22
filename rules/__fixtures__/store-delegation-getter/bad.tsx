@@ -18,7 +18,7 @@ export class AppStore {
     return this.userStore.id
   }
 
-  // The real shape found in the park (2 sites, metro/byok survey).
+  // The real shape found in the park (2 sites in a survey of two consumer repos).
   get isConnected(): boolean {
     return this.connectionStore.isConnected
   }

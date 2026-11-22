@@ -1,0 +1,9 @@
+# Repo-local leak patterns for this public repository, read by `pnpm leaks`
+# (part of `pnpm check`) and by CI. Format: `<id> <regex>` per line.
+#
+# Issue-tracker ids belong to a private board: write a plain description of
+# the problem instead of the id.
+board-issue-id \b(is|doc)-[0-9a-f]{8}\b
+# Russian text: the repository is written in English, and quotes in another
+# language here have come from private notes.
+non-english-text [а-яА-ЯёЁ]

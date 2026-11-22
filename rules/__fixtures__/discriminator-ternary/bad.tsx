@@ -1,6 +1,6 @@
 // Every ternary here MUST be reported by `discriminator-ternary`.
 
-// The terse option-unwrap the PPA audit found 18 of.
+// The terse option-unwrap the source app audit found 18 of.
 export const first = (m: Maybe<string[]>) => (m.kind === "some" ? m.value : [])
 export const adapter = (s: S) => (s.adapter.kind === "some" ? s.adapter.value : "—")
 // Other discriminator names the rule covers.

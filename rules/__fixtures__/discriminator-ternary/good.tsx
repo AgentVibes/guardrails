@@ -10,7 +10,7 @@ export const first = (m: Maybe<string[]>) =>
 
 // A ternary whose branches are JSX belongs to `jsx-ternary`, which owns that
 // case with the same fix. This rule stands down so the two can never report the
-// same line twice — measured overlap on tg-gallery + observatory: 0.
+// same line twice — measured overlap on two consumer apps: 0.
 export const View = (r: R) => (r.status === "error" ? <ErrorState /> : <Ready />)
 export const View2 = (r: R) => (r.kind === "idle" ? null : <Spinner />)
 

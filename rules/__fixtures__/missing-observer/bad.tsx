@@ -47,7 +47,7 @@ export const TabBar = ({ store }: { store: IUiModel }) => {
 
 // ── shapes taken from real components, not invented ────────────────────
 // The store read happens at body level and never appears inside the JSX.
-// tg-gallery's GalleryView does exactly this; an earlier "deref must be inside
+// A gallery app's GalleryView does exactly this; an earlier "deref must be inside
 // a jsx_expression" version of this rule missed it completely.
 export const GalleryView = function GalleryView() {
   const { galleryStore, themeStore } = useStore()
@@ -58,7 +58,7 @@ export const GalleryView = function GalleryView() {
     .exhaustive()
 }
 
-// Read straight into a local derivation — observatory's SessionsTreeSection.
+// Read straight into a local derivation — a session-viewer app's SessionsTreeSection.
 export const SessionsTreeSection = () => {
   const { data, ui } = useStore()
   const matched = data.sessions.filter((s) => sessionMatches(s, ui.searchQuery))

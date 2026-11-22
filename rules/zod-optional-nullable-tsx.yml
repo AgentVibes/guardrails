@@ -1,5 +1,5 @@
-# ── rule body adopted from faceless-photo-lib `zod-no-optional-nullable` (wave 2 triage) ──
-# The two rules were duplicates; the faceless implementation is strictly better,
+# ── rule body adopted from a consumer repo's `zod-no-optional-nullable` (wave 2 triage) ──
+# The two rules were duplicates; the consumer's implementation is strictly better,
 # so the canon id keeps its message and takes that body. Why it is better here:
 # `z.$T().optional()` only matched a DIRECT call on `z` — it missed both
 # `UserSchema.optional()` and any chained builder (`z.string().min(1).optional()`).

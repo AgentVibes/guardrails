@@ -1,6 +1,6 @@
 // NOTHING in this file may be reported by `ui-imports-app-store`.
 
-// X7 (report §2): a reusable UI component typed against the view-model
+// A reusable UI component typed against the view-model
 // interface the store implements is exactly what the mobx-models view-model
 // pattern prescribes. `import type` erases at build time — the component
 // depends on a shape, not on an app store — so it must not trip the rule that

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Comments, rule notes and docs no longer name private issue ids, private
+  consumer repositories or internal notes; they describe the case in plain
+  words. `.guardrails/leaks.txt` makes `pnpm leaks` fail on an issue id, so
+  ids cannot return.
 - Recording: the first runs that race on a new database no longer lose a
   write. Switching the file to WAL opens a read transaction and upgrades it
   to a write, and SQLite does not apply busy_timeout to that upgrade, so a

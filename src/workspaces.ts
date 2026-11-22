@@ -4,7 +4,7 @@ import { basename, join } from "node:path";
 // Workspace enumeration for stack detection. In a monorepo the root
 // package.json is dependency-empty — the stack signals (mobx, vite, expo,
 // tailwind…) live in the workspace packages, so init must read them all
-// (observatory adoption: root-only detection produced state=none for a mobx
+// (a consumer app's adoption: root-only detection produced state=none for a mobx
 // repo). Sources: pnpm-workspace.yaml `packages:` globs, or package.json
 // `workspaces` (array or { packages }).
 

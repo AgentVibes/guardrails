@@ -1,18 +1,18 @@
 # ── simple-components, rule 3 of 4 ─────────────────────────────────────
 #
-# The view half of the two-tier split (decision D8, report §9): a `*.view.tsx`
+# The view half of the two-tier split: a `*.view.tsx`
 # is props in, JSX out. No hooks, no `match`, no ternary, no data transformation.
 # That contract is what makes a view the file a cheap model writes without
 # getting it wrong, and what lets its test mount it with nothing around it.
 #
-# WARNING TIER ON PURPOSE. D8 ships the split as a recommendation first, with a
+# WARNING TIER ON PURPOSE. The two-tier split ships as a recommendation first, with a
 # ratchet on the share of view files — not as a hard gate. Raising this to error
-# would decide a question the owner deliberately parked. The store half of the
+# would decide a question that is deliberately left open. The store half of the
 # same contract is the canon's `view-imports-store` (error), which is a narrower
 # claim: no store access anywhere in the app's view files.
 #
 # `useTheme` / `useTokens` / `useStyles` / `useColorScheme` are exempt: the house
-# styling idiom is RN inline objects read from a theme hook (report §10), so
+# styling idiom is RN inline objects read from a theme hook, so
 # banning that hook would ban styling from the file that owns styling.
 id: view-file-logic
 language: tsx
@@ -28,7 +28,7 @@ message: |
   is the same branch, laundered.
   Exempt: `useTheme` / `useTokens` / `useStyles` / `useColorScheme` — styling is
   what a view owns.
-  See the simple-components skill (§two-tier) and report §9.
+  See the simple-components skill (§two-tier).
 rule:
   any:
     # Any hook call that is not a styling hook.

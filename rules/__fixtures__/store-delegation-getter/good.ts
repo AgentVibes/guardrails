@@ -2,10 +2,10 @@
 import { makeAutoObservable } from "mobx"
 
 // ── The data-wrapper pattern: 89 of the 91 single-line `return this.X.y`
-// getters measured across byok, metro, SiteCraft and observatory look exactly
+// getters measured across four consumer repos look exactly
 // like this. A model holding a plain record and republishing its fields as
-// observable getters is the sanctioned shape (byok packages/shared/src/models/
-// model.ts, metro apps/web-pmetro/src/stores/domain/station.store.ts).
+// observable getters is the sanctioned shape (a shared model class in one
+// consumer repo, domain stores in another).
 export class Model {
   readonly data: ModelRecordData
 
