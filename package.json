@@ -18,7 +18,8 @@
     "./package.json": "./package.json",
     "./plugin": "./dist/pluginApi.js",
     "./overrides": "./dist/overrides.js",
-    "./wiring": "./dist/wiring.js"
+    "./wiring": "./dist/wiring.js",
+    "./record": "./dist/record/index.js"
   },
   "files": [
     "dist",
@@ -37,7 +38,7 @@
     "format": "biome check --write .",
     "test:rules": "node dist/testRules.js",
     "test:gate": "node dist/gateRed.js",
-    "check": "pnpm build && pnpm lint && pnpm test:rules && pnpm test:twins && pnpm test:repo-rules && pnpm test:preset && pnpm test:overrides && pnpm test:wiring && pnpm test:gate && pnpm test:sibling-clone && pnpm test:metrics && pnpm test:cli-args && pnpm test:init && pnpm test:severity && pnpm test:screens && pnpm test:jsx-suppress && pnpm test:hooks && pnpm test:iterate && pnpm test:rename-diff && pnpm test:leaks && pnpm test:pipe && pnpm test:file-sloc && pnpm leaks",
+    "check": "pnpm build && pnpm lint && pnpm test:rules && pnpm test:twins && pnpm test:repo-rules && pnpm test:preset && pnpm test:overrides && pnpm test:wiring && pnpm test:record && pnpm test:gate && pnpm test:sibling-clone && pnpm test:metrics && pnpm test:cli-args && pnpm test:init && pnpm test:severity && pnpm test:screens && pnpm test:jsx-suppress && pnpm test:hooks && pnpm test:iterate && pnpm test:rename-diff && pnpm test:leaks && pnpm test:pipe && pnpm test:file-sloc && pnpm leaks",
     "test:metrics": "node dist/metricsCycle.js",
     "leaks": "node dist/cli.js leaks .",
     "test:leaks": "node dist/leaksRed.js",
@@ -54,6 +55,7 @@
     "test:preset": "node dist/presetDriftTest.js",
     "test:overrides": "node dist/overridesTest.js",
     "test:wiring": "node dist/wiringTest.js",
+    "test:record": "node dist/recordTest.js",
     "test:sibling-clone": "node dist/siblingCloneTest.js",
     "test:jsx-suppress": "node dist/jsxSuppressTest.js",
     "test:cli-args": "node dist/cliArgsTest.js"
@@ -69,7 +71,7 @@
     "typescript": "^5.7.3"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.0"
   },
   "packageManager": "pnpm@10.12.1",
   "publishConfig": {

@@ -27,6 +27,7 @@ import {
 } from "./metricsBaseline.js";
 import { collectMetrics } from "./metricsCollect.js";
 import type { ProjectMetrics } from "./metricsTypes.js";
+import { type RunCollector, scopeOf } from "./record/record.js";
 
 export interface MetricsOptions {
   targets: string[];
@@ -36,6 +37,21 @@ export interface MetricsOptions {
   force: boolean;
   snapshot: boolean;
   baselinePath: string | undefined;
+  run: RunCollector;
+}
+
+/**
+ * The project metrics as recorded names → numbers: every gated metric and
+ * every numeric observed one under its JSON key, hook totals as
+ * `hooksTotal.<hook>`. A null (no match sites) is not recorded.
+ */
+export function recordedMetrics(m: ProjectMetrics): Record<string, number> {
+  const out: Record<string, number> = { ...m.gated };
+  for (const [k, value] of Object.entries(m.observed)) {
+    if (typeof value === "number") out[k] = value;
+  }
+  for (const [hook, n] of Object.entries(m.observed.hooksTotal)) out[`hooksTotal.${hook}`] = n;
+  return out;
 }
 
 function headCommit(cwd: string): string | null {
@@ -147,6 +163,7 @@ function runMetricsInner(opts: MetricsOptions): number {
   const targets = opts.targets.length > 0 ? opts.targets : ["."];
 
   const metrics = aggregate(collectMetrics(targets));
+  opts.run.addMetrics(scopeOf(targets), recordedMetrics(metrics));
   const commit = headCommit(cwd);
 
   if (opts.snapshot) {

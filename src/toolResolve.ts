@@ -37,6 +37,26 @@ function probe(argv: string[]): string | undefined {
  * install route, never silently continue without the tool either.
  */
 export function resolveTool(tool: string): ResolvedTool {
+  const cached = resolved.get(tool);
+  if (cached !== undefined) return cached;
+  const found = resolveUncached(tool);
+  resolved.set(tool, found);
+  return found;
+}
+
+/** Tools this process already resolved; probing happens once per tool per run. */
+const resolved = new Map<string, ResolvedTool>();
+
+/**
+ * The version of a tool this run already resolved, without probing: a run
+ * record names the ast-grep that produced its findings, and never spawns (or
+ * makes mise download) a tool the run did not use.
+ */
+export function resolvedVersion(tool: string): string | undefined {
+  return resolved.get(tool)?.version;
+}
+
+function resolveUncached(tool: string): ResolvedTool {
   const direct = probe([tool]);
   if (direct !== undefined) return { argv: [tool], via: "path", version: direct };
 

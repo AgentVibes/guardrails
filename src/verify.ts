@@ -5,6 +5,7 @@ import { OverrideConfigError } from "./overrideDeclarations.js";
 import { collectOverrides, type Override } from "./overrides.js";
 import { rulesConfig } from "./packagePaths.js";
 import { driftMessage, presetDrift } from "./presetDrift.js";
+import { type RunCollector, scopeOf } from "./record/record.js";
 import { dedupeFindings, ruleConfigs } from "./repoRules.js";
 import {
   dropScopeExempt,
@@ -15,6 +16,7 @@ import {
 import { SeverityConfigError, severityRaiseArgs } from "./severity.js";
 import { structureFindings } from "./structure.js";
 import { textGrepFindings } from "./textGrep.js";
+import { detectWiring } from "./wiring.js";
 
 export function collectVerifyFindings(
   targets: string[],
@@ -41,14 +43,19 @@ export function collectVerifyFindings(
   );
 }
 
-export function runVerify(targets: string[], json: boolean): number {
+export function runVerify(targets: string[], json: boolean, run: RunCollector): number {
   const paths = targets.length > 0 ? targets : ["."];
+  const scope = scopeOf(paths);
 
   // Preset drift is checked FIRST (is-9c7a78d7): a repo running its own biome
   // config is not being linted by the thing this gate reports on, so a finding
   // count from it means less than it looks. It gates in every repo.
   const drift = presetDrift(process.cwd());
   if (drift.length > 0) {
+    run.findings = { status: "unavailable", reason: driftMessage(drift) };
+    // Drift is exactly when wiring_preset must read 0, so wiring is still measured.
+    if (run.recording)
+      run.wiring = { status: "measured", scope: "full", data: detectWiring(process.cwd()) };
     console.error(`guardrails verify: ${driftMessage(drift)}`);
     return 2;
   }
@@ -65,6 +72,16 @@ export function runVerify(targets: string[], json: boolean): number {
     const report = collectOverrides(process.cwd(), paths);
     overrides = report.overrides;
     findings = [...findings, ...report.findings];
+    run.findings = { status: "measured", scope, data: { tiers: "all", list: findings } };
+    run.overrides = { status: "measured", scope, data: overrides };
+    // Wiring is a property of the whole checkout, whatever paths were scanned.
+    if (run.recording) {
+      run.wiring = {
+        status: "measured",
+        scope: "full",
+        data: detectWiring(process.cwd(), scope === "full" ? report : undefined),
+      };
+    }
   } catch (err) {
     if (
       err instanceof OverrideConfigError ||
@@ -72,6 +89,7 @@ export function runVerify(targets: string[], json: boolean): number {
       err instanceof ScreenScopeError ||
       err instanceof AstGrepConfigError
     ) {
+      run.findings = { status: "unavailable", reason: err.message };
       console.error(`guardrails verify: ${err.message}`);
       return 2;
     }

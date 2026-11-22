@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Recording: with `GUARDRAILS_RECORD=1` (or a database path), `verify`,
+  `verify-diff`, `metrics` and `hook-stop` append what they measured to a
+  SQLite database: one `runs` row per run with its sha, branch, command,
+  duration, exit code and tool versions; findings counted by rule and tier
+  plus the top 200; overrides with their reasons; wiring checks; metrics.
+  Flat `projects_latest` / `findings_latest` / `overrides_latest` /
+  `metric_history` tables (STRICT, one integer `id`) are refreshed for
+  faceted browsers, so "wired but overridden" is one filter. Only a
+  full-checkout measurement refreshes them. Database: `[record] db` in
+  `$XDG_CONFIG_HOME/agentvibes/guardrails.toml`, else
+  `$XDG_STATE_HOME/agentvibes/guardrails.sqlite`. Schema v1 is documented in
+  README "Recording"; readers import `@agentvibes/guardrails/record`.
+  Recording never changes an exit code.
+- `engines.node` is now `>=22.13.0`, the first 22.x with `node:sqlite`.
+  It is loaded only when a run records.
 - `doctor` reports wiring: seven checks (installed, sgconfig lists the canon
   rule dir, lint script runs guardrails, CI runs it, the post-edit and stop
   hooks are registered, no preset drift), each with its evidence, and a state

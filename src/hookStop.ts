@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { formatFinding } from "./findings.js";
+import type { RunCollector } from "./record/record.js";
 import { runVerifyDiffCollect } from "./verifyDiff.js";
 
 // Claude Code Stop hook — the "cannot say done over red findings" echelon
@@ -39,7 +40,7 @@ function readCount(path: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-export function runHookStop(): number {
+export function runHookStop(run: RunCollector): number {
   try {
     let input: StopInput;
     try {
@@ -50,6 +51,12 @@ export function runHookStop(): number {
     const sessionId = input.session_id ?? "unknown-session";
 
     const { violations } = runVerifyDiffCollect(process.cwd(), undefined);
+    // Only the diff findings: a Stop hook stays fast, so no override walk.
+    run.findings = {
+      status: "measured",
+      scope: "diff",
+      data: { tiers: "error-only", list: violations },
+    };
     if (violations.length === 0) return 0;
 
     const path = counterPath(sessionId);
