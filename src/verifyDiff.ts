@@ -1,8 +1,16 @@
 import { join, relative } from "node:path";
 import { match } from "ts-pattern";
 import { AstGrepConfigError, scanFindings } from "./astGrep.js";
+import { FileSlocConfigError } from "./fileSlocBaseline.js";
+import { fileSlocFindings, type SizeScope } from "./fileSlocGate.js";
 import { type Finding, formatFinding } from "./findings.js";
-import { addedLinesByFile, changedFiles, gitRoot, resolveMergeBase } from "./gitDiff.js";
+import {
+  addedLinesByFile,
+  changedFiles,
+  gitRoot,
+  renamedFrom,
+  resolveMergeBase,
+} from "./gitDiff.js";
 import { dropJsxSuppressed } from "./jsxSuppress.js";
 import { rulesConfig } from "./packagePaths.js";
 import { dedupeFindings, ruleConfigs } from "./repoRules.js";
@@ -30,6 +38,11 @@ import { readTomlTable } from "./tomlTable.js";
 //
 // Warning-tier findings and text-greps never gate; brownfield findings on
 // untouched lines never gate on rung 1.
+//
+// The per-file length ratchet (fileSlocGate.ts) rides the same rungs but is
+// judged per FILE, not per line: on rung 1 every file with an added line (or
+// untracked) is measured against .guardrails/file-sloc.json; on rungs 2 and 3
+// every file in scope is.
 
 type Rung =
   | { kind: "added-lines"; root: string; mergeBase: string }
@@ -41,6 +54,8 @@ interface Plan {
   files: string[] | undefined;
   /** undefined = gate every error finding; otherwise gate only listed lines/files. */
   keep: (f: Finding) => boolean;
+  /** files the length ratchet measures */
+  size: SizeScope;
 }
 
 /**
@@ -71,14 +86,17 @@ function planFor(rung: Rung): Plan {
       rungLabel: "whole-tree (not a git repository — nothing to diff against, gating everything)",
       files: undefined,
       keep: () => true,
+      size: { kind: "tree" as const },
     }))
     .with({ kind: "whole-file" }, ({ root }) => {
       const { tracked, untracked } = changedFiles(root, "HEAD");
+      const files = [...new Set([...tracked, ...untracked])];
       return {
         rungLabel:
           "whole-file (no resolvable base ref — gating every line of changed/untracked files)",
-        files: [...new Set([...tracked, ...untracked])],
+        files,
         keep: () => true,
+        size: { kind: "files" as const, files, renamedFrom: new Map<string, string>() },
       };
     })
     .with({ kind: "added-lines" }, ({ root, mergeBase }) => {
@@ -89,9 +107,17 @@ function planFor(rung: Rung): Plan {
       // and an inherited violation never gates. A file absent from the map has
       // no added lines (pure rename, deletion) — nothing to keep.
       const addedByFile = addedLinesByFile(root, mergeBase);
+      const files = [...new Set([...tracked, ...untracked])];
       return {
         rungLabel: `added-lines vs merge-base ${mergeBase.slice(0, 12)}`,
-        files: [...new Set([...tracked, ...untracked])],
+        files,
+        // A pure rename or a deletions-only edit adds no line: the file did
+        // not grow, so its length is not this diff's to judge.
+        size: {
+          kind: "files" as const,
+          files: files.filter((f) => untrackedSet.has(f) || addedByFile.has(f)),
+          renamedFrom: renamedFrom(root, mergeBase),
+        },
         keep: (f: Finding) => {
           if (untrackedSet.has(f.file)) return true;
           return addedByFile.get(f.file)?.has(f.line) ?? false;
@@ -117,8 +143,11 @@ export function runVerifyDiffCollect(cwd: string, base: string | undefined): Ver
     // '^packages/site-chrome/') is written against repo-root-relative ones.
     plan.files = plan.files.filter((f) => !exclude.test(relative(cwd, f)));
   }
+  // Judged per file, so appended after the per-line `keep` filter: a size
+  // finding sits at line 1, which is rarely an added line.
+  const sizeViolations = fileSlocFindings(cwd, plan.size, exclude);
   if (plan.files !== undefined && plan.files.length === 0) {
-    return { rungLabel: plan.rungLabel, filesScanned: 0, violations: [] };
+    return { rungLabel: plan.rungLabel, filesScanned: 0, violations: sizeViolations };
   }
   const targets = plan.files ?? ["."];
   // The same post-filters `verify` applies (collectVerifyFindings): the repo's
@@ -137,7 +166,11 @@ export function runVerifyDiffCollect(cwd: string, base: string | undefined): Ver
   )
     .filter((f) => f.severity === "error")
     .filter(plan.keep);
-  return { rungLabel: plan.rungLabel, filesScanned: plan.files?.length ?? -1, violations };
+  return {
+    rungLabel: plan.rungLabel,
+    filesScanned: plan.files?.length ?? -1,
+    violations: [...violations, ...sizeViolations],
+  };
 }
 
 export function runVerifyDiff(base: string | undefined, json: boolean): number {
@@ -148,7 +181,8 @@ export function runVerifyDiff(base: string | undefined, json: boolean): number {
     if (
       err instanceof SeverityConfigError ||
       err instanceof AstGrepConfigError ||
-      err instanceof ScreenScopeError
+      err instanceof ScreenScopeError ||
+      err instanceof FileSlocConfigError
     ) {
       console.error(`guardrails verify-diff: ${err.message}`);
       return 2;

@@ -138,3 +138,30 @@ export function addedLinesByFile(root: string, mergeBase: string): Map<string, S
 export function addedLines(root: string, mergeBase: string, file: string): Set<number> {
   return addedLinesByFile(root, mergeBase).get(absPath(root, file)) ?? new Set<number>();
 }
+
+/**
+ * Renamed .ts/.tsx files vs mergeBase: new absolute path → old absolute path.
+ * The per-file length ratchet needs it so a renamed file keeps the ceiling
+ * its old path holds in the baseline.
+ */
+export function renamedFrom(root: string, mergeBase: string): Map<string, string> {
+  const out =
+    git(root, [
+      "diff",
+      "--name-status",
+      "-M",
+      "--diff-filter=R",
+      mergeBase,
+      "--",
+      "*.ts",
+      "*.tsx",
+    ]) ?? "";
+  const map = new Map<string, string>();
+  for (const line of out.split("\n")) {
+    const [status, from, to] = line.split("\t");
+    if (status?.startsWith("R") && from !== undefined && to !== undefined) {
+      map.set(absPath(root, to), absPath(root, from));
+    }
+  }
+  return map;
+}

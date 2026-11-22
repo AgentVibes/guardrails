@@ -47,10 +47,10 @@ All subcommands accept `--json`.
 | command | what | exit |
 |---|---|---|
 | `guardrails verify [paths]` | full scan: rule canon + text-greps + structure (one component per file, 120-line error / 90-line warning) | 1 on any error-tier finding |
-| `guardrails verify-diff [--base R]` | ratchet: error-tier findings on lines your diff ADDED vs merge-base; falls back to whole-file, then whole-tree — never to silence | 1 on new findings only |
+| `guardrails verify-diff [--base R]` | ratchet: error-tier findings on lines your diff ADDED vs merge-base; falls back to whole-file, then whole-tree — never to silence; also judges every file the diff grew against the [per-file length ratchet](#per-file-length-ratchet) | 1 on new findings only |
 | `guardrails doctor` | tool versions + resolution route, ruleset SHA, config discovery | 1 if a tool is missing |
 | `guardrails init` | writes `sgconfig.yml`, `biome.json` (extends the preset), and a detected-and-materialized `[stack]` in `.agentvibes/project.toml` | 0 |
-| `guardrails metrics [paths]` | per-component (loc, hooks, props, observer, JSX depth, branching), per-file (sloc, context-cost) and per-project metrics; `--check` compares the GATED set against the committed `.guardrails/metrics.json` baseline (recomputes facts, never trusts the file); `--update-baseline` tightens it (2% hysteresis, never loosens without `--force`); `--snapshot` appends a JSONL trend row | 1 on ratchet regression, 2 when `--check` finds no baseline |
+| `guardrails metrics [paths]` | per-component (loc, hooks, props, observer, JSX depth, branching), per-file (sloc, context-cost) and per-project metrics; `--check` compares the GATED set against the committed `.guardrails/metrics.json` baseline (recomputes facts, never trusts the file); `--update-baseline` tightens it (2% hysteresis, never loosens without `--force`); `--snapshot` appends a JSONL trend row. Both `--check` and `--update-baseline` also run the [per-file length ratchet](#per-file-length-ratchet) | 1 on ratchet regression, 2 when `--check` finds no baseline or the length threshold is invalid |
 
 Gated (ratchet, lower = better): p90 component_loc, useState density,
 inline-map-row count, p90 context-cost, runInAction count, async-in-store,
@@ -71,6 +71,48 @@ count (no rule yet). `loading_boolean_shapes` is deliberately NOT the
 where the outcome is recorded twice (loading flag + second outcome/payload
 field), while the metric also counts lone boolean progress-flag declarations
 (`loading = false` class fields) — the wider Resource<T> migration target.
+
+## Per-file length ratchet
+
+No production file may hold more than **500 SLOC** (lines minus imports,
+blank lines and comment-only lines — the `file_sloc` that `metrics` reports).
+Test files, stories, showcases and `.d.ts` files are excluded, as for every
+metric. Files that were already longer when a repo adopted the ratchet are
+listed in a committed baseline, `.guardrails/file-sloc.json`, each with its own
+ceiling:
+
+```json
+{ "version": 1, "threshold": 500, "files": { "src/legacy/bigStore.ts": 812 } }
+```
+
+- A listed file fails when it grows past its ceiling.
+- Any other file fails when it crosses the threshold (exactly 500 passes).
+- `guardrails metrics --update-baseline` lowers a ceiling as soon as its file
+  shrinks (no hysteresis: SLOC is an exact count), and drops the entry once the
+  file is back under the threshold or deleted. It never raises a ceiling and
+  never lists a new file; only the first creation and `--force` do, and that
+  diff is reviewed like any other loosening.
+- A renamed listed file keeps its ceiling: renames since the merge base are
+  followed by `verify-diff`, `metrics --check` and `--update-baseline`.
+
+Where it runs: `guardrails metrics --check` judges every file in its targets;
+`guardrails verify-diff` (and so `hook-stop`) judges only the files the diff
+grew — untracked files and files with added lines on the added-lines rung,
+every changed file on the whole-file rung, every file on the whole-tree rung.
+A pure rename or a deletions-only edit is not judged. Without a baseline file
+nothing is grandfathered: run `guardrails metrics --update-baseline` once and
+commit `.guardrails/file-sloc.json` next to `metrics.json`.
+
+The threshold is configurable; a value that is not a positive integer exits 2
+instead of falling back to the default:
+
+```toml
+# .agentvibes/project.toml
+[metrics]
+max_file_sloc = 400
+```
+
+`GUARDRAILS_MAX_FILE_SLOC` in the environment overrides the file.
 
 ## CI gate (reusable workflow)
 

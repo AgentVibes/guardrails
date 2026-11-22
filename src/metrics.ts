@@ -1,5 +1,21 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { match } from "ts-pattern";
+import {
+  baselineKey,
+  checkFileSloc,
+  describeViolation,
+  FileSlocConfigError,
+  type FileSlocUpdate,
+  type FileSlocViolation,
+  fileSlocBaselinePath,
+  maxFileSloc,
+  readFileSlocBaseline,
+  updateFileSloc,
+  writeFileSlocBaseline,
+} from "./fileSlocBaseline.js";
+import { renamesSinceBase } from "./fileSlocGate.js";
 import { aggregate } from "./metricsAggregate.js";
 import {
   appendSnapshot,
@@ -54,7 +70,73 @@ function printReport(metrics: ProjectMetrics): void {
   console.log(`  file_sloc p50               ${observed.p50FileSloc}`);
 }
 
+function measuredSloc(cwd: string, metrics: ProjectMetrics): Map<string, number> {
+  return new Map(metrics.files.map((f) => [baselineKey(cwd, f.file), f.fileSloc]));
+}
+
+/** --update-baseline's half for the per-file length ratchet (.guardrails/file-sloc.json). */
+function updateFileSlocBaseline(
+  cwd: string,
+  metrics: ProjectMetrics,
+  force: boolean,
+): FileSlocUpdate {
+  const path = fileSlocBaselinePath(cwd);
+  const old = match(readFileSlocBaseline(path))
+    .with({ kind: "absent" }, () => undefined)
+    .with({ kind: "present" }, (r) => r.baseline)
+    .exhaustive();
+  const result = updateFileSloc(
+    old,
+    measuredSloc(cwd, metrics),
+    maxFileSloc(cwd),
+    force,
+    (key) => existsSync(join(cwd, key)),
+    renamesSinceBase(cwd),
+  );
+  writeFileSlocBaseline(path, result.next);
+  return result;
+}
+
+function printFileSlocUpdate(result: FileSlocUpdate, baselineRel: string): void {
+  const listed = Object.keys(result.next.files).length;
+  console.log(
+    `guardrails metrics: ${baselineRel} — ${listed} file(s) over ${result.next.threshold} SLOC listed`,
+  );
+  for (const t of result.tightened) console.log(`  tightened  ${t.file} ${t.from} → ${t.to}`);
+  for (const f of result.dropped) console.log(`  dropped    ${f} (under the limit or gone)`);
+  for (const f of result.added) console.log(`  listed     ${f} → ${result.next.files[f]}`);
+  for (const v of result.held) {
+    console.log(
+      `  NOT listed/raised (only --force does that): ${describeViolation(v, baselineRel)}`,
+    );
+  }
+}
+
+/** --check's half for the per-file length ratchet; an absent baseline grandfathers nothing. */
+function checkFileSlocBaseline(cwd: string, metrics: ProjectMetrics): FileSlocViolation[] {
+  const baseline = match(readFileSlocBaseline(fileSlocBaselinePath(cwd)))
+    .with({ kind: "absent" }, () => ({}))
+    .with({ kind: "present" }, (r) => r.baseline.files)
+    .exhaustive();
+  return checkFileSloc(
+    measuredSloc(cwd, metrics),
+    baseline,
+    maxFileSloc(cwd),
+    renamesSinceBase(cwd),
+  );
+}
+
 export function runMetrics(opts: MetricsOptions): number {
+  try {
+    return runMetricsInner(opts);
+  } catch (err) {
+    if (!(err instanceof FileSlocConfigError)) throw err;
+    console.error(`guardrails metrics: ${err.message}`);
+    return 2;
+  }
+}
+
+function runMetricsInner(opts: MetricsOptions): number {
   if (opts.check && opts.updateBaseline) {
     console.error("guardrails metrics: --check and --update-baseline are mutually exclusive");
     return 2;
@@ -75,6 +157,8 @@ export function runMetrics(opts: MetricsOptions): number {
     const old = readBaseline(baselinePath);
     const result = updateGated(old?.gated, metrics.gated, opts.force);
     writeBaseline(baselinePath, result.next, metrics.observed, commit);
+    const fileSloc = updateFileSlocBaseline(cwd, metrics, opts.force);
+    const fileSlocRel = baselineKey(cwd, fileSlocBaselinePath(cwd));
     if (opts.json) {
       console.log(
         JSON.stringify(
@@ -84,6 +168,7 @@ export function runMetrics(opts: MetricsOptions): number {
             baselinePath,
             ...result,
             current: metrics.gated,
+            fileSloc: { baselinePath: fileSlocRel, ...fileSloc },
           },
           null,
           2,
@@ -105,6 +190,7 @@ export function runMetrics(opts: MetricsOptions): number {
         `  kept       ${k} (current ${metrics.gated[k]} is WORSE than baseline ${result.next[k]} — not loosening without --force)`,
       );
     }
+    printFileSlocUpdate(fileSloc, fileSlocRel);
     return 0;
   }
 
@@ -117,6 +203,9 @@ export function runMetrics(opts: MetricsOptions): number {
       return 2;
     }
     const regressions = checkAgainstBaseline(metrics.gated, baseline.gated);
+    const fileSloc = checkFileSlocBaseline(cwd, metrics);
+    const fileSlocRel = baselineKey(cwd, fileSlocBaselinePath(cwd));
+    const ok = regressions.length === 0 && fileSloc.length === 0;
     if (opts.json) {
       console.log(
         JSON.stringify(
@@ -124,26 +213,33 @@ export function runMetrics(opts: MetricsOptions): number {
             command: "metrics",
             action: "check",
             baselinePath,
-            ok: regressions.length === 0,
+            ok,
             regressions,
             current: metrics.gated,
             baseline: baseline.gated,
+            fileSloc: { baselinePath: fileSlocRel, violations: fileSloc },
           },
           null,
           2,
         ),
       );
-      return regressions.length === 0 ? 0 : 1;
+      return ok ? 0 : 1;
     }
-    if (regressions.length === 0) {
+    if (ok) {
       console.log(
-        `guardrails metrics --check: OK — no gated metric regressed vs ${baselinePath} (baseline commit ${baseline.commit?.slice(0, 12) ?? "unknown"})`,
+        `guardrails metrics --check: OK — no gated metric regressed vs ${baselinePath}, no file over its length ceiling (baseline commit ${baseline.commit?.slice(0, 12) ?? "unknown"})`,
       );
       return 0;
     }
-    console.log("guardrails metrics --check: RATCHET VIOLATION — gated metrics regressed:");
-    for (const r of regressions) {
-      console.log(`  ${r.metric.padEnd(22)} baseline ${r.baseline} → current ${r.current}`);
+    if (regressions.length > 0) {
+      console.log("guardrails metrics --check: RATCHET VIOLATION — gated metrics regressed:");
+      for (const r of regressions) {
+        console.log(`  ${r.metric.padEnd(22)} baseline ${r.baseline} → current ${r.current}`);
+      }
+    }
+    if (fileSloc.length > 0) {
+      console.log("guardrails metrics --check: RATCHET VIOLATION — file length:");
+      for (const v of fileSloc) console.log(`  ${describeViolation(v, fileSlocRel)}`);
     }
     console.log(
       "Improve the code back under the baseline. Loosening the baseline itself requires\n`guardrails metrics --update-baseline --force` and belongs in a reviewed commit.",
