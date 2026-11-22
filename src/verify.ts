@@ -1,6 +1,8 @@
 import { AstGrepConfigError, scanFindings } from "./astGrep.js";
 import { type Finding, formatFinding, hasErrors } from "./findings.js";
 import { dropJsxSuppressed } from "./jsxSuppress.js";
+import { OverrideConfigError } from "./overrideDeclarations.js";
+import { collectOverrides, type Override } from "./overrides.js";
 import { rulesConfig } from "./packagePaths.js";
 import { driftMessage, presetDrift } from "./presetDrift.js";
 import { dedupeFindings, ruleConfigs } from "./repoRules.js";
@@ -54,10 +56,18 @@ export function runVerify(targets: string[], json: boolean): number {
   // Both manifest sections are resolved here so a config the gate cannot honour
   // exits 2 with the reason — never a stack trace, and never silently dropped.
   let findings: Finding[];
+  let overrides: Override[];
   try {
     findings = collectVerifyFindings(paths, severityRaiseArgs(process.cwd()));
+    // The overrides inventory (overrides.ts) is `verify`-only: a missing
+    // reason is a warning for the repo to see, not something the per-edit
+    // hooks or the diff ratchet should re-report on every change.
+    const report = collectOverrides(process.cwd(), paths);
+    overrides = report.overrides;
+    findings = [...findings, ...report.findings];
   } catch (err) {
     if (
+      err instanceof OverrideConfigError ||
       err instanceof SeverityConfigError ||
       err instanceof ScreenScopeError ||
       err instanceof AstGrepConfigError
@@ -72,12 +82,16 @@ export function runVerify(targets: string[], json: boolean): number {
 
   if (json) {
     console.log(
-      JSON.stringify({ command: "verify", targets: paths, errors, warnings, findings }, null, 2),
+      JSON.stringify(
+        { command: "verify", targets: paths, errors, warnings, findings, overrides },
+        null,
+        2,
+      ),
     );
   } else {
     for (const f of findings) console.log(formatFinding(f));
     console.log(
-      `guardrails verify: ${errors} error(s), ${warnings} warning(s) in ${paths.join(" ")}`,
+      `guardrails verify: ${errors} error(s), ${warnings} warning(s) in ${paths.join(" ")}; ${overrides.length} override(s), ${overrides.filter((o) => o.reason.status === "missing").length} without a reason`,
     );
     if (errors > 0) {
       console.log(

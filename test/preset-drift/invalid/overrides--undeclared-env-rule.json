@@ -1,0 +1,17 @@
+{
+  "biome.json": {
+    "extends": ["@agentvibes/guardrails/biome"],
+    "overrides": [
+      {
+        "includes": ["**/scripts/**"],
+        "linter": {
+          "rules": {
+            "suspicious": {
+              "noUndeclaredEnvVars": "off"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

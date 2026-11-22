@@ -1,6 +1,6 @@
 export type Severity = "error" | "warning" | "info" | "hint";
 
-export type FindingSource = "ast-grep" | "text-grep" | "structure";
+export type FindingSource = "ast-grep" | "text-grep" | "structure" | "override";
 
 export interface Finding {
   rule: string;

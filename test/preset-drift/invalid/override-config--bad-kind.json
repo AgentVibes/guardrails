@@ -1,0 +1,6 @@
+{
+  "biome.json": {
+    "extends": ["@agentvibes/guardrails/biome"]
+  },
+  ".agentvibes/project.toml": "[[override]]\nkind = \"severity\"\nrule = \"x\"\nreason = \"r\"\n"
+}

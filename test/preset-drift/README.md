@@ -11,3 +11,8 @@ in a temp directory and runs `presetDrift`, `guardrails verify` and
 
 The files are not named `biome.json` on purpose: a nested `biome.json` in this
 repository would itself be drift, and biome would load it as a nested config.
+
+A key holding a JSON string is written as raw text, which is how fixtures carry
+an `.agentvibes/project.toml` with `[[override]]` declarations: a declared,
+reasoned biome rule is an escape (`valid/declared-*`), a declaration whose
+paths or reason do not match is not (`invalid/overrides--declared-*`).

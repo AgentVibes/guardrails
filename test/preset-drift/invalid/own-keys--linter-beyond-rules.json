@@ -1,0 +1,14 @@
+{
+  "biome.json": {
+    "extends": ["@agentvibes/guardrails/biome"],
+    "linter": {
+      "enabled": true,
+      "rules": {
+        "style": {
+          "useConst": "off"
+        }
+      }
+    }
+  },
+  ".agentvibes/project.toml": "[[override]]\nkind = \"biome-rule\"\nrule = \"style/useConst\"\nreason = \"r\"\n"
+}

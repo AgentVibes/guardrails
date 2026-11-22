@@ -1,0 +1,7 @@
+# Overrides of the canon in this repository, each with its reason (README: "Overrides").
+
+[[override]]
+kind = "biome-rule"
+rule = "suspicious/noConsole"
+paths = ["src/**"]
+reason = "this package is a CLI: printing to the terminal is its output"
