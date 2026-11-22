@@ -8,7 +8,7 @@ export type Resource<T> =
   | { status: "error"; message: string }
 
 // Independent axes done RIGHT — this is SWR, not boolean soup: "has data" and
-// "a fetch is in flight" genuinely are orthogonal (report §14).
+// "a fetch is in flight" genuinely are orthogonal.
 export type QueryState<T> =
   | { status: "pending"; fetchActivity: "idle" | "fetching" }
   | { status: "success"; data: T; fetchActivity: "idle" | "fetching" }

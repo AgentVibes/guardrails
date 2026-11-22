@@ -13,7 +13,7 @@ They are still NOT in the package `sgconfig.yml` and load nowhere from here.
 | R-rule | canon id | why |
 |---|---|---|
 | r4-ternary-on-discriminator | `discriminator-ternary` | 18 hits outside the source app, and measured **disjoint** from both rules it looked like a duplicate of: `∩ jsx-ternary = 0`, `∩ kind-if-without-match = 0`. The three partition the space — `if` on a discriminator, ternary yielding JSX, ternary yielding values. A `not: is-jsx` clause makes that disjointness structural rather than lucky. |
-| r14-literal-union-in-component | `literal-union-in-component` | Already a house rule — report §8 bans string-literal unions from component files in the `ui/` tier. Globs generalised from `apps/<app>/**` to `**/components/**`, `**/screens/**`, `**/app/**`. |
+| r14-literal-union-in-component | `literal-union-in-component` | Already a house rule — the house store layout bans string-literal unions from component files in the `ui/` tier. Globs generalised from `apps/<app>/**` to `**/components/**`, `**/screens/**`, `**/app/**`. |
 | r1a-hardcoded-url-in-component | `hardcoded-url-in-component` | Enforces the "No localhost" convention: every service URL comes from `dev url`, never a literal. Same reusability boundary `ui-imports-app-store` guards from the other side. |
 
 ## Staying repo-local

@@ -1,6 +1,6 @@
 # ── simple-components, rule 4 of 4 ─────────────────────────────────────
 #
-# The logic half of the two-tier split (decision D8, report §9): a screen picks
+# The logic half of the two-tier split: a screen picks
 # the models, matches the state and composes views. It carries no styling.
 #
 # Scoped to `**/*.screen.tsx` and nothing else, deliberately. The contract says
@@ -10,7 +10,7 @@
 # one filename the convention makes explicit, so it is the one place the rule can
 # be right without a manifest.
 #
-# WARNING TIER: same reason as `view-file-logic` — D8 is recommendation-tier.
+# WARNING TIER: same reason as `view-file-logic` — the two-tier split is recommendation-tier.
 id: screen-file-styling
 language: tsx
 severity: warning
@@ -22,7 +22,7 @@ message: |
   on a second job and starts growing the layout it should have delegated.
   Move the markup into a `*.view.tsx` (or a shared UI primitive) and let the
   screen pass it data.
-  See the simple-components skill (§two-tier) and report §9.
+  See the simple-components skill (§two-tier).
 rule:
   all:
     - kind: jsx_attribute

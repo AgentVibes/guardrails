@@ -24,7 +24,7 @@ export function warnNotImplemented(category: string, detail: string): void {
   console.warn(`[not-implemented] ${category}: ${detail}`)
 }
 
-// The useMemo improvisation with no dispose that report §8 found everywhere.
+// The useMemo improvisation with no dispose that the store-layout audit found everywhere.
 export const usePageStore = <T>(factory: () => T, deps: unknown[]): T => {
   return useMemo(factory, deps)
 }

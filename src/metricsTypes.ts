@@ -60,7 +60,7 @@ export interface StoreMetrics {
   loadingBooleanShapes: number;
 }
 
-/** The ratchet set (D7): direction for every one of these is LOWER = BETTER. */
+/** The ratchet set: direction for every one of these is LOWER = BETTER. */
 export interface GatedMetrics {
   p90ComponentLoc: number;
   useStateDensity: number;

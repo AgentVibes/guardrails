@@ -38,7 +38,7 @@ message: |
   with progress and no notion of revalidation) legitimately ticks on a timer.
   There is no manifest glob for that yet, so mark those with a reason:
     // ast-grep-ignore: store-no-setinterval-poll -- progress tick for a render job
-  See report §14 and the mobx-models skill.
+  See the mobx-models skill.
 rule:
   all:
     - kind: call_expression

@@ -7,7 +7,7 @@ import { readTomlTable } from "./tomlTable.js";
 // Screens are not leaf components, and one canon rule cannot tell them apart.
 //
 // `direct-store-import` bans pulling a store class or slice-store singleton into
-// a component file. A SCREEN is required to do exactly that — report §8's shape
+// a component file. A SCREEN is required to do exactly that — its shape
 // is `usePageStore(() => new GalleryPageStore(rootStore, slug))`, which needs
 // the class imported — so the rule fires on the form the canon prescribes. Its
 // own header predicted this and named the fix: the boundary needs the repo to

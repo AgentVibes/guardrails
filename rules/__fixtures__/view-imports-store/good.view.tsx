@@ -1,6 +1,6 @@
 // NOTHING in this file may be reported by `view-imports-store`.
 
-// A view is typed against the model interface it renders (C40). The type
+// A view is typed against the model interface it renders. The type
 // vanishes at build time, so it is a contract, not a store dependency.
 import type { IGalleryModel } from "../../stores/galleryStore"
 import { type IUiModel } from "../../stores/uiStore"

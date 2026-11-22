@@ -43,7 +43,7 @@ message: |
     - a shared module as a typed constant + alias when it is purely lexical
       (file kinds, palette names) with no state attached.
   Component prop types then consume the shared type instead of restating it.
-  See the mobx-models skill and report §8.
+  See the mobx-models skill.
   Suppressing this one needs the id you see above — `ast-grep-ignore: literal-union-in-component-tsx`.
   `literal-union-in-component` is a DIFFERENT rule (the .ts arm) and does not cover it.
 rule:

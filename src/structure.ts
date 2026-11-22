@@ -11,8 +11,8 @@ import { structureConfig } from "./packagePaths.js";
 // is what makes the size rule a true ratchet under verify-diff: it gates
 // components that are born too long, not existing ones someone edited inside.
 //
-// D2: components over 120 lines are errors, over 90 warnings.
-// D3: strict one component per file.
+// Components over 120 lines are errors, over 90 warnings.
+// Strict one component per file.
 
 const MAX_LINES = Number(
   process.env.GUARDRAILS_MAX_COMPONENT_LINES ?? process.env.DE_MAX_COMPONENT_LINES ?? 120,
