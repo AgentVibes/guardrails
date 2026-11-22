@@ -18,10 +18,13 @@
 
 export const SCHEMA_VERSION = 1;
 
-/** projects_latest metric column → the metric name a run records. */
+/**
+ * projects_latest metric column → the metric name a run records. A command
+ * that measures one of these emits it under exactly this name.
+ */
 export const METRIC_COLUMNS = {
   sloc: "sloc",
-  files: "files",
+  files: "fileCount",
   avg_file_sloc: "avg_file_sloc",
   files_over_sloc_limit: "files_over_sloc_limit",
   run_in_action: "runInActionCount",

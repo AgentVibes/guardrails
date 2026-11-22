@@ -53,6 +53,9 @@ export function runVerify(targets: string[], json: boolean, run: RunCollector): 
   const drift = presetDrift(process.cwd());
   if (drift.length > 0) {
     run.findings = { status: "unavailable", reason: driftMessage(drift) };
+    // Drift is exactly when wiring_preset must read 0, so wiring is still measured.
+    if (run.recording)
+      run.wiring = { status: "measured", scope: "full", data: detectWiring(process.cwd()) };
     console.error(`guardrails verify: ${driftMessage(drift)}`);
     return 2;
   }

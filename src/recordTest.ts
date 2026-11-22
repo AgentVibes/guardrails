@@ -422,7 +422,33 @@ async function cliCases(): Promise<void> {
     cli(dir, ["doctor"], { GUARDRAILS_RECORD: db });
     check("hook-postedit and doctor do not record", rows(db, "SELECT id FROM runs").length === 1);
 
-    // Two writers at once: every run lands, none is lost to SQLITE_BUSY.
+    const stop = spawnSync("node", [CLI, "hook-stop"], {
+      cwd: dir,
+      input: '{"session_id":"record-test"}',
+      encoding: "utf8",
+      env: { ...process.env, GUARDRAILS_RECORD: db },
+    });
+    const stopRun = rows(
+      db,
+      "SELECT x.id, p.scope FROM runs x JOIN run_parts p ON p.run_id = x.id AND p.part = 'findings' WHERE x.command = 'hook-stop'",
+    );
+    check(
+      "hook-stop records its diff findings",
+      stop.status === 0 && stopRun.length === 1 && stopRun[0]?.scope === "diff",
+      `${JSON.stringify(stopRun)} stderr=${stop.stderr}`,
+    );
+
+    const metrics = cli(dir, ["metrics"], { GUARDRAILS_RECORD: db });
+    const latest = rows(db, "SELECT files, run_in_action FROM projects_latest")[0];
+    check(
+      "a real metrics run fills its projects_latest columns",
+      metrics.status === 0 && latest?.files === 1 && latest.run_in_action === 0,
+      `${JSON.stringify(latest)} stderr=${metrics.stderr}`,
+    );
+
+    // Several writers at once on a database that does not exist yet: each
+    // creates, switches to WAL and migrates the same file. Every run lands.
+    const fresh = join(state, "fresh", "g.sqlite");
     const N = 6;
     const codes = await Promise.all(
       Array.from(
@@ -431,7 +457,7 @@ async function cliCases(): Promise<void> {
           new Promise<number>((done) => {
             const child = spawn("node", [CLI, "verify"], {
               cwd: dir,
-              env: { ...process.env, GUARDRAILS_RECORD: db },
+              env: { ...process.env, GUARDRAILS_RECORD: fresh },
               stdio: ["ignore", "ignore", "pipe"],
             });
             let err = "";
@@ -444,7 +470,9 @@ async function cliCases(): Promise<void> {
     );
     check(
       `${N} concurrent runs all recorded`,
-      codes.every((c) => c === 0) && rows(db, "SELECT id FROM runs").length === N + 1,
+      codes.every((c) => c === 0) &&
+        rows(fresh, "SELECT id FROM runs").length === N &&
+        rows(fresh, "PRAGMA user_version")[0]?.user_version === SCHEMA_VERSION,
       JSON.stringify(codes),
     );
 
