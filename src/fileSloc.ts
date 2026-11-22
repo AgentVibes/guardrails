@@ -24,9 +24,10 @@ export const EXCLUDED_FILE = /\.(test|spec|stories)\.[jt]sx?$|__tests__|\/showca
  * 20 locally vs 21 in CI on the same commit). The ast-grep-backed counters
  * were already deterministic — ast-grep honors .gitignore natively.
  */
-export function dropGitignored(files: string[]): string[] {
+export function dropGitignored(files: string[], cwd: string = process.cwd()): string[] {
   if (files.length === 0) return files;
   const res = spawnSync("git", ["check-ignore", "--stdin"], {
+    cwd,
     input: files.join("\n"),
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,

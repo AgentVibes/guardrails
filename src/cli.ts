@@ -10,7 +10,8 @@ import { runInit } from "./init.js";
 import { runIterate } from "./iterate.js";
 import { runLeaks } from "./leaks.js";
 import { runMetrics } from "./metrics.js";
-import { RunCollector, recordRun, shouldRecord } from "./record/record.js";
+import { NOT_RECORDING, RunCollector, recordRun, resolveTarget } from "./record/record.js";
+import { runSnapshot } from "./snapshot.js";
 import { ToolMissingError } from "./toolResolve.js";
 import { runVerify } from "./verify.js";
 import { runVerifyDiff } from "./verifyDiff.js";
@@ -33,6 +34,11 @@ Usage:
                                       --update-baseline [--force] tightens the
                                       baseline (2% hysteresis); --snapshot appends
                                       a JSONL trend row; --baseline <path> overrides
+
+  guardrails snapshot [path]          record one checkout (default .) into the
+                                      recording database, whether or not it
+                                      uses guardrails; writes nothing into it;
+                                      exit 2 only when the record fails
 
   guardrails leaks [paths]            public/private boundary gate: scan for
                                       private-infrastructure markers and token
@@ -138,7 +144,11 @@ async function main(argv: string[]): Promise<number> {
   }
 
   const recorded = RECORDED.has(command);
-  const run = new RunCollector(recorded && shouldRecord());
+  // snapshot records by definition (an unset variable means the default
+  // database) and writes its own record, so it is not in RECORDED.
+  const run = new RunCollector(
+    command === "snapshot" ? resolveTarget(true) : recorded ? resolveTarget() : NOT_RECORDING,
+  );
   const startedAt = new Date();
   const started = performance.now();
   // ast-grep-ignore: non-exhaustive-match -- `command` is arbitrary CLI input (open string), not a closed union; the otherwise arm IS the unknown-subcommand error path
@@ -160,6 +170,7 @@ async function main(argv: string[]): Promise<number> {
       }),
     )
     .with("leaks", () => runLeaks(filtered, json, patternsFile))
+    .with("snapshot", () => runSnapshot(filtered, json, run))
     .with("deploy", () => runDeploy(filtered, json))
     .with("hook-postedit", () => runHookPostedit())
     .with("hook-stop", () => runHookStop(run))
@@ -178,7 +189,7 @@ async function main(argv: string[]): Promise<number> {
       console.error(USAGE);
       return 2;
     });
-  if (run.recording) {
+  if (recorded && run.recording) {
     // The outcome is reported on stderr by recordRun; a run that could not be
     // recorded keeps its own exit code (a state database is not a gate).
     await recordRun(run, {

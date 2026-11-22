@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `guardrails snapshot [path]` records one checkout into the recording
+  database, whether or not it uses guardrails, and writes nothing into it.
+  Each part is measured on its own; one that fails is recorded `unavailable`
+  with its reason, so a repo without guardrails is wiring `off` with its
+  metrics. Exit 2 only when the path is not a directory or the record fails.
+- Recorded metrics (from `metrics` while recording, and `snapshot`): `sloc`,
+  `avg_file_sloc`, `files_over_sloc_limit`, `loc` and `loc.<language>`,
+  `git_worktrees`, `git_local_branches`; the matching `projects_latest`
+  columns are filled.
+- The overrides inventory skips gitignored files: a suppression in generated
+  code is not the project's override.
 - Recording: with `GUARDRAILS_RECORD=1` (or a database path), `verify`,
   `verify-diff`, `metrics` and `hook-stop` append what they measured to a
   SQLite database: one `runs` row per run with its sha, branch, command,
