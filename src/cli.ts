@@ -10,6 +10,7 @@ import { runInit } from "./init.js";
 import { runIterate } from "./iterate.js";
 import { runLeaks } from "./leaks.js";
 import { runMetrics } from "./metrics.js";
+import { RunCollector, recordRun, shouldRecord } from "./record/record.js";
 import { ToolMissingError } from "./toolResolve.js";
 import { runVerify } from "./verify.js";
 import { runVerifyDiff } from "./verifyDiff.js";
@@ -54,8 +55,13 @@ Usage:
                                       back, repeat to green or --max (6)
 
 All subcommands accept --json.
+GUARDRAILS_RECORD=1 (or a database path) records verify, verify-diff, metrics
+and hook-stop runs into SQLite; see README "Recording".
 Exit codes: 0 ok · 1 findings/regression · 2 usage, missing tool, or missing baseline
 `;
+
+/** Commands whose runs are recorded when GUARDRAILS_RECORD is on (README "Recording"). */
+const RECORDED = new Set(["verify", "verify-diff", "metrics", "hook-stop"]);
 
 async function main(argv: string[]): Promise<number> {
   const args = [...argv];
@@ -131,19 +137,32 @@ async function main(argv: string[]): Promise<number> {
     }
   }
 
+  const recorded = RECORDED.has(command);
+  const run = new RunCollector(recorded && shouldRecord());
+  const startedAt = new Date();
+  const started = performance.now();
   // ast-grep-ignore: non-exhaustive-match -- `command` is arbitrary CLI input (open string), not a closed union; the otherwise arm IS the unknown-subcommand error path
-  return match(command)
-    .with("verify", () => runVerify(filtered, json))
-    .with("verify-diff", () => runVerifyDiff(base, json))
+  const exitCode = match(command)
+    .with("verify", () => runVerify(filtered, json, run))
+    .with("verify-diff", () => runVerifyDiff(base, json, run))
     .with("doctor", () => runDoctor(json))
     .with("init", () => runInit(json))
     .with("metrics", () =>
-      runMetrics({ targets: filtered, json, check, updateBaseline, force, snapshot, baselinePath }),
+      runMetrics({
+        targets: filtered,
+        json,
+        check,
+        updateBaseline,
+        force,
+        snapshot,
+        baselinePath,
+        run,
+      }),
     )
     .with("leaks", () => runLeaks(filtered, json, patternsFile))
     .with("deploy", () => runDeploy(filtered, json))
     .with("hook-postedit", () => runHookPostedit())
-    .with("hook-stop", () => runHookStop())
+    .with("hook-stop", () => runHookStop(run))
     .with("iterate", () =>
       runIterate({
         task,
@@ -159,6 +178,17 @@ async function main(argv: string[]): Promise<number> {
       console.error(USAGE);
       return 2;
     });
+  if (run.recording) {
+    // The outcome is reported on stderr by recordRun; a run that could not be
+    // recorded keeps its own exit code (a state database is not a gate).
+    await recordRun(run, {
+      command,
+      exitCode: await exitCode,
+      durationMs: performance.now() - started,
+      startedAt,
+    });
+  }
+  return exitCode;
 }
 
 // `exitCode`, never `process.exit()`: stdout to a pipe is asynchronous, and

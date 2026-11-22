@@ -12,7 +12,10 @@ import {
   resolveMergeBase,
 } from "./gitDiff.js";
 import { dropJsxSuppressed } from "./jsxSuppress.js";
+import { OverrideConfigError } from "./overrideDeclarations.js";
+import { collectOverrides } from "./overrides.js";
 import { rulesConfig } from "./packagePaths.js";
+import type { RunCollector } from "./record/record.js";
 import { dedupeFindings, ruleConfigs } from "./repoRules.js";
 import {
   dropScopeExempt,
@@ -23,6 +26,7 @@ import {
 import { SeverityConfigError, severityRaiseArgs } from "./severity.js";
 import { structureFindings } from "./structure.js";
 import { readTomlTable } from "./tomlTable.js";
+import { detectWiring } from "./wiring.js";
 
 // Added-lines ratchet, ported from defensive-errors check-diff.sh, with the
 // hook-postedit.sh fallback ladder instead of check-diff's "skip when no base".
@@ -173,10 +177,16 @@ export function runVerifyDiffCollect(cwd: string, base: string | undefined): Ver
   };
 }
 
-export function runVerifyDiff(base: string | undefined, json: boolean): number {
+export function runVerifyDiff(base: string | undefined, json: boolean, run: RunCollector): number {
   let result: VerifyDiffResult;
   try {
     result = runVerifyDiffCollect(process.cwd(), base);
+    run.findings = {
+      status: "measured",
+      scope: "diff",
+      data: { tiers: "error-only", list: result.violations },
+    };
+    if (run.recording) recordRepoState(run);
   } catch (err) {
     if (
       err instanceof SeverityConfigError ||
@@ -184,6 +194,7 @@ export function runVerifyDiff(base: string | undefined, json: boolean): number {
       err instanceof ScreenScopeError ||
       err instanceof FileSlocConfigError
     ) {
+      run.findings = { status: "unavailable", reason: err.message };
       console.error(`guardrails verify-diff: ${err.message}`);
       return 2;
     }
@@ -230,5 +241,22 @@ function report(
     console.log(
       "Fix these, or suppress a genuine false positive with a justified comment on the line above:\n  // ast-grep-ignore: <rule-id> -- <why this is legitimate>",
     );
+  }
+}
+
+/**
+ * For the record only: the diff ratchet does not look at overrides or wiring,
+ * but a recorded run should say what state the checkout was in. Both are
+ * whole-repo facts, so they are measured over the whole checkout.
+ */
+function recordRepoState(run: RunCollector): void {
+  try {
+    const report = collectOverrides(run.root);
+    run.overrides = { status: "measured", scope: "full", data: report.overrides };
+    run.wiring = { status: "measured", scope: "full", data: detectWiring(run.root, report) };
+  } catch (err) {
+    if (!(err instanceof OverrideConfigError)) throw err;
+    run.overrides = { status: "unavailable", reason: err.message };
+    run.wiring = { status: "measured", scope: "full", data: detectWiring(run.root) };
   }
 }

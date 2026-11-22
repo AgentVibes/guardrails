@@ -347,6 +347,102 @@ canon (see "Overrides"); `off` when nothing but the preset check passes;
 Wiring is a report: it never changes `doctor`'s exit code, which stays the
 tools-and-drift verdict.
 
+## Recording
+
+guardrails can write what each run saw into a SQLite database, one row per
+run, for dashboards and terminal views that compare many repos. Recording is
+off unless you turn it on.
+
+| `GUARDRAILS_RECORD` | effect |
+|---|---|
+| unset, empty or `0` | nothing is recorded |
+| `1` | record to the configured database, else the default one |
+| a path (`~/` is expanded) | record to that database |
+
+- Configured database: `[record] db = "<path>"` in
+  `$XDG_CONFIG_HOME/agentvibes/guardrails.toml` (`~/.config/…` when
+  `XDG_CONFIG_HOME` is unset). Any other key under `[record]` is an error.
+- Default database: `$XDG_STATE_HOME/agentvibes/guardrails.sqlite`
+  (`~/.local/state/…` when unset). The directory is created on first write.
+
+`verify`, `verify-diff`, `metrics` and `hook-stop` record. `hook-postedit`,
+`doctor`, `init`, `leaks`, `deploy` and `iterate` do not. A database that
+cannot be written prints one line on stderr and never changes the exit code:
+a state database is not a gate. Node 22.13 or later is needed
+(`node:sqlite`); it is loaded only when a run records.
+
+Readers import `SCHEMA_VERSION`, the table and column maps and row types from
+`@agentvibes/guardrails/record`. The database is in WAL mode, so a reader can
+read while a run writes; writers wait up to 5 s for each other.
+
+### What a run measures
+
+A run records four parts. Each is `measured` (over the `full` checkout, a
+`diff`, or given `paths`), `unavailable` (attempted, failed; with the
+reason), or `skipped` (this command does not measure it).
+
+| command | findings | overrides | wiring | metrics |
+|---|---|---|---|---|
+| `verify` | all tiers, `full` or `paths` | same scope | `full` | skipped |
+| `verify-diff` | error tier only, `diff` | `full` | `full` | skipped |
+| `hook-stop` | error tier only, `diff` | skipped | skipped | skipped |
+| `metrics` | skipped | skipped | skipped | `full` or `paths` |
+
+### Schema (version 1)
+
+Times are ISO-8601 UTC text. Booleans are `0`/`1`. `NULL` means "not
+measured", never zero. The schema version is `PRAGMA user_version`; a newer
+version than this guardrails knows is refused, never written.
+
+**History tables** (appended, never rewritten):
+
+| table | one row per | columns |
+|---|---|---|
+| `repos` | repo | `key` (unique), `host`, `owner`, `name` |
+| `runs` | run | `repo_id`, `at`, `command`, `root`, `sha`, `branch`, `duration_ms`, `exit_code`, `guardrails_version`, `node_version`, `ast_grep_version`, `biome_version`, `wiring`, `errors`, `warnings`, `overrides`, `overrides_without_reason` |
+| `run_parts` | run × part | `run_id`, `part` (`findings`/`overrides`/`wiring`/`metrics`), `status` (`measured`/`unavailable`/`skipped`), `scope` (`full`/`diff`/`paths`), `reason` |
+| `run_wiring` | run × wiring check | `run_id`, `check_id`, `pass`, `detail` |
+| `run_rule_counts` | run × rule × tier × source | `run_id`, `rule`, `tier`, `source`, `count` |
+| `run_findings` | finding, at most 200 per run, errors first | `run_id`, `rule`, `tier`, `source`, `file`, `line`, `message` |
+| `run_overrides` | override | `run_id`, `kind`, `rule`, `where`, `file`, `line`, `reason`, `has_reason` |
+
+The repo key is `host/owner/name` from the `origin` remote: lowercase,
+without `.git`, without `user:token@`, without a port. The scp form
+(`git@host:owner/name`) and `ssh://` are read too. A GitLab subgroup stays in
+the owner (`group/sub`). A checkout with no usable origin is
+`local/<directory>`.
+
+`runs.errors` and `runs.warnings` count code findings only: the
+`canon-overridden` and `override-without-reason` warnings restate
+`runs.overrides`, so they are counted there, and kept by source in
+`run_rule_counts`. `runs.warnings` is `NULL` for an error-tier-only run.
+
+**Latest tables**, for faceted browsers: one row per entity, refreshed for a
+repo inside the same transaction as each run. Every one is `STRICT`, has a
+single `id INTEGER PRIMARY KEY`, and only `INTEGER`, `REAL` and `TEXT`
+columns. A part refreshes them only when measured over the `full` checkout,
+so a diff run or a metrics run never blanks what a full `verify` measured;
+the `*_run_id` columns say which run each group of columns came from.
+
+| table | one row per | columns |
+|---|---|---|
+| `projects_latest` | repo | `key`, `host`, `owner`, `name`; `wiring` (`off`/`partial`/`on`); `wiring_installed`, `wiring_sgconfig_canon`, `wiring_lint_script`, `wiring_ci`, `wiring_hook_postedit`, `wiring_hook_stop`, `wiring_preset`; `errors`, `warnings`, `overrides`, `overrides_without_reason`; `sloc`, `files`, `avg_file_sloc` (REAL), `files_over_sloc_limit`, `run_in_action`, `worktrees`, `local_branches`, `build_ms`; `last_run_at`, `last_sha`, `last_branch`, `last_command`; `wiring_run_id`, `findings_run_id`, `overrides_run_id` |
+| `findings_latest` | code finding of the latest full `verify` | `repo`, `rule`, `tier`, `file`, `line`, `message` |
+| `overrides_latest` | override of the latest full measurement | `repo`, `kind`, `rule`, `where`, `reason`, `has_reason`, `file`, `line` |
+| `metric_history` | run × metric | `run_id`, `repo`, `at`, `metric`, `value` (REAL) |
+
+`metric_history` holds every metric of a full-scope `metrics` run under its
+`--json` key (`p90ComponentLoc`, `runInActionCount`, `fileCount`,
+`hooksTotal.useState`, …), plus `errors`, `warnings`, `overrides` and
+`overrides_without_reason` from each full `verify`.
+
+"Wired but overridden" is `wiring = 'partial' AND overrides > 0`:
+
+```sh
+sqlite3 ~/.local/state/agentvibes/guardrails.sqlite \
+  "SELECT key, overrides, overrides_without_reason FROM projects_latest WHERE wiring = 'partial' AND overrides > 0"
+```
+
 ## Rules and fixtures
 
 - `rules/` — the canon. Stable ids, each message is a mini-manual (why + fix).
