@@ -28,6 +28,7 @@ export const DECLARABLE_KINDS = [
   "biome-rule",
   "repo-rule-shadow",
   "metrics-limit",
+  "cargo-lint",
 ] as const;
 export type DeclarableKind = (typeof DECLARABLE_KINDS)[number];
 
@@ -52,6 +53,16 @@ const Declaration = z.discriminatedUnion("kind", [
     .strict(),
   z
     .object({ kind: z.literal("metrics-limit"), rule: z.string().min(1), reason: reasonField })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("cargo-lint"),
+      /** As Cargo spells the key: `clippy::module_name_repetitions`, or a bare rustc lint `unsafe_code`. */
+      rule: z.string().min(1),
+      /** The Cargo.toml that sets it, repo-relative: `["Cargo.toml"]`, `["crates/cli/Cargo.toml"]`. */
+      paths: z.array(z.string()).min(1, "name the Cargo.toml that sets the lint"),
+      reason: reasonField,
+    })
     .strict(),
 ]);
 export type OverrideDeclaration = z.infer<typeof Declaration> & { index: number };

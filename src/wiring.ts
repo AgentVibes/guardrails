@@ -2,6 +2,13 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { match } from "ts-pattern";
 import { z } from "zod";
+import { hasLanguage, type LanguageId, languagesOrDetected } from "./lang/languages.js";
+import {
+  NEUTRAL_RUST_CHECKS,
+  RUST_WIRING_CHECKS,
+  type RustWiringCheckId,
+  rustWiringChecks,
+} from "./lang/rust/rustWiring.js";
 import { OverrideConfigError } from "./overrideDeclarations.js";
 import { collectOverrides, type OverrideReport } from "./overrides.js";
 import { isPackageSource, PACKAGE_NAME } from "./packagePaths.js";
@@ -19,7 +26,7 @@ import { declaredRuleDirs } from "./repoRules.js";
 //   off     — guardrails is not installed and nothing else is wired either;
 //   partial — anything in between, including "fully wired, but overrides".
 
-export { PACKAGE_NAME };
+export { PACKAGE_NAME, RUST_WIRING_CHECKS };
 
 export const WIRING_CHECKS = [
   "installed",
@@ -30,7 +37,17 @@ export const WIRING_CHECKS = [
   "hook-stop",
   "preset",
 ] as const;
-export type WiringCheckId = (typeof WIRING_CHECKS)[number];
+/** The TypeScript checks keep their unprefixed ids; other adapters prefix theirs (`rust.ci`). */
+export type WiringCheckId = (typeof WIRING_CHECKS)[number] | RustWiringCheckId;
+
+/** The checks every language shares: the agent hooks. */
+export const SHARED_WIRING_CHECKS: readonly WiringCheckId[] = ["hook-postedit", "hook-stop"];
+
+/** Which adapter a check belongs to: `shared` (hooks), `rust`, or `typescript`. */
+export function checkAdapter(id: string): "shared" | LanguageId {
+  if (SHARED_WIRING_CHECKS.includes(id as WiringCheckId)) return "shared";
+  return id.startsWith("rust.") ? "rust" : "typescript";
+}
 
 export interface WiringCheck {
   id: WiringCheckId;
@@ -173,7 +190,7 @@ function checkLint(
     .exhaustive();
 }
 
-function ciFiles(root: string): string[] {
+export function ciFiles(root: string): string[] {
   const out: string[] = [];
   for (const dir of [".github/workflows", ".gitea/workflows"]) {
     const abs = join(root, dir);
@@ -290,7 +307,12 @@ function countOverrides(root: string, report: OverrideReport | undefined): Overr
 export function wiringState(checks: readonly WiringCheck[], overrides: OverrideCount): WiringState {
   const passed = (id: WiringCheckId): boolean =>
     checks.some((c) => c.id === id && c.status === "pass");
-  const wiredAnywhere = WIRING_CHECKS.filter((id) => id !== "preset").some(passed);
+  // The preset and the neutral Rust checks say nothing about whether
+  // guardrails runs: alone they do not lift a repo out of `off`.
+  const wiredAnywhere = checks
+    .map((c) => c.id)
+    .filter((id) => id !== "preset" && !NEUTRAL_RUST_CHECKS.has(id))
+    .some(passed);
   if (!wiredAnywhere) return "off";
   const allPass = checks.every((c) => c.status === "pass");
   const noOverrides = match(overrides)
@@ -304,18 +326,34 @@ export function wiringState(checks: readonly WiringCheck[], overrides: OverrideC
  * Every wiring check for `root`, and the overall state. Pass the override
  * report when the caller already has one, so the tree is not scanned twice.
  */
-export function detectWiring(root: string, overrideReport?: OverrideReport): WiringReport {
-  const pkg = readPackage(root);
-  const lint = checkLint(root, pkg);
+export function detectWiring(
+  root: string,
+  overrideReport?: OverrideReport,
+  languages: readonly LanguageId[] = languagesOrDetected(root),
+): WiringReport {
   const hooks = hookCommands(root);
-  const checks: WiringCheck[] = [
-    checkInstalled(root, pkg),
-    checkSgconfig(root),
-    lint.check,
-    checkCi(root, lint.script),
+  const hookChecks = [
     checkHook("hook-postedit", "PostToolUse", hooks),
     checkHook("hook-stop", "Stop", hooks),
-    checkPreset(root),
+  ];
+  // TypeScript keeps its checks and their order exactly; the hooks sit
+  // between `ci` and `preset` as they always have. Without TypeScript the
+  // hooks are the only shared checks.
+  const typescript = (): WiringCheck[] => {
+    const pkg = readPackage(root);
+    const lint = checkLint(root, pkg);
+    return [
+      checkInstalled(root, pkg),
+      checkSgconfig(root),
+      lint.check,
+      checkCi(root, lint.script),
+      ...hookChecks,
+      checkPreset(root),
+    ];
+  };
+  const checks: WiringCheck[] = [
+    ...(hasLanguage(languages, "typescript") ? typescript() : hookChecks),
+    ...(hasLanguage(languages, "rust") ? rustWiringChecks(root, ciFiles(root)) : []),
   ];
   const overrides = countOverrides(root, overrideReport);
   return { state: wiringState(checks, overrides), checks, overrides };

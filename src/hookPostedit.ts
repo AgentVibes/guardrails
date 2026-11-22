@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, relative } from "node:path";
+import { match } from "ts-pattern";
 import { AstGrepConfigError } from "./astGrep.js";
 import { type Finding, formatFinding } from "./findings.js";
 import { addedLines, gitRoot, resolveMergeBase } from "./gitDiff.js";
+import { rustPostedit } from "./lang/rust/rustHook.js";
 import { severityRaiseArgs } from "./severity.js";
 import { collectVerifyFindings } from "./verify.js";
 import { verifyExcludeRe } from "./verifyDiff.js";
@@ -32,6 +34,8 @@ interface HookInput {
   tool_name?: string;
   tool_input?: { file_path?: string };
 }
+
+const RUST_SUPPRESS = `False positive? Suppress that one lint on the item, with the reason:\n#[expect(<lint>, reason = "<why this is legitimate>")]`;
 
 const SUPPRESS =
   "False positive? Suppress a specific finding with a justified comment on the line above it:\n// ast-grep-ignore: <rule-id> -- <why this is legitimate>\nThe scan honors it and will not re-flag that line.";
@@ -82,9 +86,19 @@ export function runHookPostedit(): number {
   if (tool !== "Edit" && tool !== "Write") return 0;
   const configDir = process.env.AGENT_CONFIG_DIR;
   if (configDir !== undefined && configDir !== "" && file.startsWith(`${configDir}/`)) return 0;
-  if (!file.endsWith(".ts") && !file.endsWith(".tsx")) return 0;
+  const rust = file.endsWith(".rs");
+  if (!rust && !file.endsWith(".ts") && !file.endsWith(".tsx")) return 0;
   // ast-grep-ignore: silent-default-return -- a hook fires on deletes/renames too; a vanished file has nothing to scan and hooks must never fail the edit (donor hook-postedit.sh line `[ -f "$FILE" ] || exit 0`)
   if (!existsSync(file)) return 0;
+  if (rust) {
+    return match(rustPostedit(tool, file))
+      .with({ status: "skip" }, (res) => {
+        if (res.note !== undefined) console.error(`guardrails hook-postedit: ${res.note}`);
+        return 0;
+      })
+      .with({ status: "findings" }, (res) => emit(file, res.findings, RUST_SUPPRESS))
+      .exhaustive();
+  }
 
   // Honour the repo's `[verify] exclude` carve-out (vendored trees) the same
   // way verify-diff does — an edit inside a vendored copy is not gated.
@@ -136,6 +150,11 @@ export function runHookPostedit(): number {
     );
   }
 
+  return emit(file, findings, SUPPRESS);
+}
+
+/** The hook's answer: block on error-tier findings, context for warnings, silence otherwise. */
+function emit(file: string, findings: Finding[], suppress: string): number {
   if (findings.length === 0) return 0;
 
   const rendered = findings.map(formatFinding).join("\n").split("\n").slice(0, 60).join("\n");
@@ -145,7 +164,7 @@ export function runHookPostedit(): number {
     console.log(
       JSON.stringify({
         decision: "block",
-        reason: `guardrails scan found ERROR-tier violations in ${base}:\n\n${rendered}\n\nFix these before continuing. ${SUPPRESS}\nRule rationale: the defensive-errors and mobx-models skills; \`guardrails verify --help\`.`,
+        reason: `guardrails scan found ERROR-tier violations in ${base}:\n\n${rendered}\n\nFix these before continuing. ${suppress}\nRule rationale: the defensive-errors and mobx-models skills; \`guardrails verify --help\`.`,
       }),
     );
   } else {
@@ -153,7 +172,7 @@ export function runHookPostedit(): number {
       JSON.stringify({
         hookSpecificOutput: {
           hookEventName: "PostToolUse",
-          additionalContext: `guardrails scan flagged warnings in ${base}:\n\n${rendered}\n\nAddress these or, if a finding is a false positive, suppress it. ${SUPPRESS}`,
+          additionalContext: `guardrails scan flagged warnings in ${base}:\n\n${rendered}\n\nAddress these or, if a finding is a false positive, suppress it. ${suppress}`,
         },
       }),
     );

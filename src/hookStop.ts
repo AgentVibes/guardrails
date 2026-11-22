@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatFinding } from "./findings.js";
-import type { RunCollector } from "./record/record.js";
-import { runVerifyDiffCollect } from "./verifyDiff.js";
+import { formatFinding, isRustFinding } from "./findings.js";
+import { type RunCollector, recordLanguageFindings } from "./record/record.js";
+import { RUST_SUPPRESS_HINT, runVerifyDiffCollect } from "./verifyDiff.js";
 
 // Claude Code Stop hook — the "cannot say done over red findings" echelon
 // (spec layer C). On Stop it runs the verify-diff ratchet over the session's
@@ -50,13 +50,19 @@ export function runHookStop(run: RunCollector): number {
     }
     const sessionId = input.session_id ?? "unknown-session";
 
-    const { violations } = runVerifyDiffCollect(process.cwd(), undefined);
+    const result = runVerifyDiffCollect(process.cwd(), undefined, "hook-stop");
+    const { violations } = result;
     // Only the diff findings: a Stop hook stays fast, so no override walk.
     run.findings = {
       status: "measured",
       scope: "diff",
       data: { tiers: "error-only", list: violations },
     };
+    recordLanguageFindings(run, "diff", result);
+    // A check that could not run (a Rust build that fails, a timeout) is said,
+    // never blocked on: the hook must not wedge the session over tooling.
+    for (const u of result.unavailable)
+      console.error(`guardrails hook-stop: ${u.language} could not be checked: ${u.reason}`);
     if (violations.length === 0) return 0;
 
     const path = counterPath(sessionId);
@@ -77,10 +83,11 @@ export function runHookStop(run: RunCollector): number {
       blocks + 1 === MAX_BLOCKS
         ? `\n(This is block ${blocks + 1}/${MAX_BLOCKS} — the next Stop will NOT be blocked; CI still will.)`
         : "";
+    const rustHint = violations.some(isRustFinding) ? `\n${RUST_SUPPRESS_HINT}` : "";
     console.log(
       JSON.stringify({
         decision: "block",
-        reason: `guardrails verify-diff: ${violations.length} error-tier finding(s) on lines this session changed — finish the cleanup before stopping:\n\n${rendered}\n\nFix these, or suppress a genuine false positive with a justified comment on the line above:\n// ast-grep-ignore: <rule-id> -- <why this is legitimate>${finalWarning}`,
+        reason: `guardrails verify-diff: ${violations.length} error-tier finding(s) on lines this session changed — finish the cleanup before stopping:\n\n${rendered}\n\nFix these, or suppress a genuine false positive with a justified comment on the line above:\n// ast-grep-ignore: <rule-id> -- <why this is legitimate>${rustHint}${finalWarning}`,
       }),
     );
     return 0;

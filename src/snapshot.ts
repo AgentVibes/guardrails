@@ -1,14 +1,17 @@
 import { existsSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { match } from "ts-pattern";
+import type { Finding } from "./findings.js";
+import { hasLanguage, type LanguageId, resolveLanguages } from "./lang/languages.js";
+import { rustVerifyFindings } from "./lang/rust/rustFindings.js";
 import { recordedMetrics } from "./metrics.js";
 import { aggregate } from "./metricsAggregate.js";
 import { collectMetrics } from "./metricsCollect.js";
 import { collectOverrides, type OverrideReport } from "./overrides.js";
 import { driftMessage, presetDrift } from "./presetDrift.js";
-import { type RunCollector, recordRun } from "./record/record.js";
+import { type RunCollector, recordLanguageFindings, recordRun } from "./record/record.js";
 import { repoMetrics } from "./record/repoMetrics.js";
-import type { Part } from "./record/runRecord.js";
+import type { FindingsData, Part } from "./record/runRecord.js";
 import { severityRaiseArgs } from "./severity.js";
 import { collectVerifyFindings } from "./verify.js";
 import { detectWiring } from "./wiring.js";
@@ -49,17 +52,65 @@ function measure(run: RunCollector): void {
     .with({ status: "unavailable" }, { status: "skipped" }, () => undefined)
     .exhaustive();
 
-  run.findings = attempt(() => {
-    const drift = presetDrift(root);
-    if (drift.length > 0) throw new Error(driftMessage(drift));
-    const code = collectVerifyFindings(["."], severityRaiseArgs(root), root);
-    return { tiers: "all" as const, list: [...code, ...(report?.findings ?? [])] };
-  });
+  // A [languages] table that cannot be read leaves the findings unavailable;
+  // wiring and metrics are still measured on what the checkout looks like.
+  const langs = attempt(() => resolveLanguages(root).languages);
+  run.findings = match(langs)
+    .with({ status: "measured" }, (l) => measureFindings(run, root, l.data, report))
+    .with({ status: "unavailable" }, { status: "skipped" }, (p) => p)
+    .exhaustive();
   run.wiring = attempt(() => detectWiring(root, report));
   run.metrics = attempt(() => {
     const m = aggregate(collectMetrics(["."]));
     return { ...recordedMetrics(m), ...repoMetrics(m, root) };
   });
+}
+
+/**
+ * Every enabled language's findings. A language that cannot be measured is
+ * recorded per language with its reason (record.ts); the TypeScript part
+ * keeps its old all-or-nothing rule (preset drift makes it unavailable).
+ */
+function measureFindings(
+  run: RunCollector,
+  root: string,
+  languages: LanguageId[],
+  report: OverrideReport | undefined,
+): Part<FindingsData> {
+  const ts: Part<Finding[]> = hasLanguage(languages, "typescript")
+    ? attempt(() => {
+        const drift = presetDrift(root);
+        if (drift.length > 0) throw new Error(driftMessage(drift));
+        return collectVerifyFindings(["."], severityRaiseArgs(root), root);
+      })
+    : { status: "skipped" };
+  return match(ts)
+    .with({ status: "unavailable" }, (p): Part<FindingsData> => p)
+    .with({ status: "measured" }, { status: "skipped" }, (p): Part<FindingsData> => {
+      const code = p.status === "measured" ? p.data : [];
+      const list: Finding[] = [...code, ...(report?.findings ?? [])];
+      const counts: Partial<Record<LanguageId, number>> =
+        p.status === "measured" ? { typescript: code.length } : {};
+      const unavailable: { language: LanguageId; reason: string }[] = [];
+      if (hasLanguage(languages, "rust")) {
+        const rust = rustVerifyFindings(root, "snapshot");
+        list.push(
+          ...rust.findings.map((f) => ({
+            ...f,
+            file: relative(root, f.file).split(sep).join("/"),
+          })),
+        );
+        unavailable.push(
+          ...rust.unavailable.map((reason) => ({ language: "rust" as const, reason })),
+        );
+        if (rust.unavailable.length === 0) counts.rust = rust.findings.length;
+      }
+      run.findings = { status: "measured", scope: "full", data: { tiers: "all", list } };
+      // May turn the part unavailable when no language could be measured.
+      recordLanguageFindings(run, "full", { languages, counts, unavailable });
+      return run.findings;
+    })
+    .exhaustive();
 }
 
 function partLine<T>(name: string, part: Part<T>, summary: (data: T) => string): string {

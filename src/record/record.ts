@@ -1,13 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { match } from "ts-pattern";
+import type { LanguageId } from "../lang/languages.js";
 import type { Override } from "../overrides.js";
 import { packageRoot } from "../packagePaths.js";
 import { resolvedVersion } from "../toolResolve.js";
 import type { WiringReport } from "../wiring.js";
 import { type RecordTarget, recordTarget } from "./config.js";
 import { currentBranch, headSha, repoIdentity } from "./repoKey.js";
-import type { FindingsData, Part, RunRecord, RunScope } from "./runRecord.js";
+import type { FindingsData, LanguageFindings, Part, RunRecord, RunScope } from "./runRecord.js";
 import { SKIPPED } from "./runRecord.js";
 import { openDatabase, writeRun } from "./writer.js";
 
@@ -42,6 +43,8 @@ export class RunCollector {
   overrides: Part<Override[]> = SKIPPED;
   wiring: Part<WiringReport> = SKIPPED;
   metrics: Part<Record<string, number>> = SKIPPED;
+  languages: LanguageId[] | undefined = undefined;
+  languageFindings: LanguageFindings[] = [];
 
   /** The checkout the run observes; `snapshot` points it at another directory. */
   root: string = process.cwd();
@@ -67,6 +70,45 @@ export class RunCollector {
       status: "measured",
       scope,
       data: { ...previous, ...Object.fromEntries(finite) },
+    };
+  }
+}
+
+/**
+ * Records which languages a run checked and, per language, whether its
+ * findings were measured (with the count) or could not be (with the reason).
+ * Call it after `run.findings` is set.
+ */
+export function recordLanguageFindings(
+  run: RunCollector,
+  scope: RunScope,
+  result: {
+    languages: LanguageId[];
+    counts: Partial<Record<LanguageId, number>>;
+    unavailable: { language: LanguageId; reason: string }[];
+  },
+): void {
+  run.languages = result.languages;
+  run.languageFindings = result.languages.map((language) => {
+    const reasons = result.unavailable.filter((u) => u.language === language).map((u) => u.reason);
+    const count = result.counts[language];
+    const part: Part<number> =
+      reasons.length > 0
+        ? { status: "unavailable", reason: reasons.join("; ") }
+        : count === undefined
+          ? { status: "skipped" }
+          : { status: "measured", scope, data: count };
+    return { language, part };
+  });
+  // Never zero for a language that did not run: when no language produced
+  // findings at all (a Rust-only repo whose build fails), the run's findings
+  // are unavailable. When some did, the run keeps what they found and
+  // projects_latest.findings_unavailable names the language that is missing.
+  const measured = run.languageFindings.some((l) => l.part.status === "measured");
+  if (!measured && result.unavailable.length > 0) {
+    run.findings = {
+      status: "unavailable",
+      reason: result.unavailable.map((u) => `${u.language}: ${u.reason}`).join("; "),
     };
   }
 }
@@ -130,6 +172,8 @@ export async function recordRun(c: RunCollector, meta: RunMeta): Promise<RecordO
           overrides: c.overrides,
           wiring: c.wiring,
           metrics: c.metrics,
+          languages: c.languages,
+          languageFindings: c.languageFindings,
         };
         const handle = await openDatabase(t.db);
         try {

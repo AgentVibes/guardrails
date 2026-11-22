@@ -5,6 +5,8 @@ import { dropGitignored } from "./fileSloc.js";
 import { DEFAULT_MAX_FILE_SLOC } from "./fileSlocBaseline.js";
 import { collectFiles } from "./fileWalk.js";
 import type { Finding } from "./findings.js";
+import { hasLanguage, resolveLanguages } from "./lang/languages.js";
+import { cargoLintOverrides, rustInlineOverrides } from "./lang/rust/rustOverrides.js";
 import {
   type OverrideDeclaration,
   readOverrideDeclarations,
@@ -50,7 +52,9 @@ export type OverrideKind =
   | "verify-scope"
   | "biome-rule"
   | "repo-rule-shadow"
-  | "metrics-limit";
+  | "metrics-limit"
+  | "rust-allow"
+  | "cargo-lint";
 
 export type OverrideReason = { status: "given"; text: string } | { status: "missing" };
 
@@ -162,7 +166,7 @@ function inlineOverrides(root: string, targets: string[]): Override[] {
 }
 
 /** Every configured deviation, each still without its reason (filled from declarations). */
-type Configured = Omit<Override, "reason"> & { paths: string[] };
+export type Configured = Omit<Override, "reason"> & { paths: string[] };
 
 function verifyScopes(root: string): Configured[] {
   const table = readTomlTable(join(root, ".agentvibes", "project.toml"), "verify");
@@ -290,7 +294,7 @@ function declarationFor(
       d.kind === c.kind &&
       d.rule === c.rule &&
       match(d)
-        .with({ kind: "biome-rule" }, (b) => samePaths(b.paths, c.paths))
+        .with({ kind: "biome-rule" }, { kind: "cargo-lint" }, (b) => samePaths(b.paths, c.paths))
         .with(
           { kind: "verify-scope" },
           { kind: "repo-rule-shadow" },
@@ -313,11 +317,15 @@ function warning(rule: string, o: { file: string; line: number }, message: strin
 export function collectOverrides(root: string, targets: string[] = ["."]): OverrideReport {
   const declarations = readOverrideDeclarations(root);
   const used = new Set<number>();
+  // Rust overrides only where Rust is enabled: a TypeScript-only repo scans
+  // exactly what it always did.
+  const rust = hasLanguage(resolveLanguages(root).languages, "rust");
   const configured = [
     ...verifyScopes(root),
     ...biomeRules(root),
     ...ruleShadows(root),
     ...metricsLimits(root),
+    ...(rust ? cargoLintOverrides(root) : []),
   ];
   const overrides: Override[] = [
     ...configured.map((c) => {
@@ -327,6 +335,7 @@ export function collectOverrides(root: string, targets: string[] = ["."]): Overr
       return { ...rest, reason: reasonOf(d?.reason) };
     }),
     ...inlineOverrides(root, targets),
+    ...(rust ? rustInlineOverrides(root, targets) : []),
   ];
   const overridden: Finding[] = overrides.map((o) =>
     warning(
@@ -356,12 +365,18 @@ export function collectOverrides(root: string, targets: string[] = ["."]): Overr
               `${o.where}: biome-ignore ${o.rule} has no reason — write \`: <why>\` after the rule`,
           )
           .with(
+            "rust-allow",
+            () =>
+              `${o.where}: allow/expect ${o.rule} has no reason — write \`reason = "<why>"\` in the attribute`,
+          )
+          .with(
             "verify-scope",
             "biome-rule",
+            "cargo-lint",
             "repo-rule-shadow",
             "metrics-limit",
             (kind) =>
-              `${o.where}: no reason — declare it in .agentvibes/project.toml: [[override]] kind = "${kind}", rule = "${o.rule}"${kind === "biome-rule" ? `, paths = ${JSON.stringify(configured.find((c) => c.where === o.where)?.paths ?? [])}` : ""}, reason = "<why>"`,
+              `${o.where}: no reason — declare it in .agentvibes/project.toml: [[override]] kind = "${kind}", rule = "${o.rule}"${kind === "biome-rule" || kind === "cargo-lint" ? `, paths = ${JSON.stringify(configured.find((c) => c.where === o.where)?.paths ?? [])}` : ""}, reason = "<why>"`,
           )
           .exhaustive(),
       ),

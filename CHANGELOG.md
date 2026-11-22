@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+- Languages. guardrails runs one adapter per language: `typescript`
+  (`package.json` or `tsconfig.json`) and, new, `rust` (a `Cargo.toml`).
+  Both found is a mixed repo; neither is `typescript`, as before. Set the
+  list with `[languages] enabled = [...]` in `.agentvibes/project.toml`.
+  README "Languages".
+- Rust adapter (README "Rust"):
+  - `verify`, `verify-diff`, `hook-stop` and `snapshot` run `cargo clippy
+    --message-format=json --all-targets` and `cargo fmt --check`;
+    `verify-diff` and `hook-stop` fail only on findings on added lines.
+  - `hook-postedit` on a `.rs` file runs clippy for the package that owns it,
+    with a time limit (`GUARDRAILS_CLIPPY_TIMEOUT_S`).
+  - `doctor` has four wiring checks: `rust.clippy-strict` (the lint table
+    against the shipped canon, `configs/rust-lints.toml`),
+    `rust.lints-inherited`, `rust.toolchain` and `rust.ci`.
+  - The override inventory lists every `#[allow]`, `#![allow]` and
+    `#[expect]` (`rust-allow`) and every canon lint lowered in `Cargo.toml`
+    (`cargo-lint`).
+  - `init` writes the canon lint table, `[lints] workspace = true`,
+    `rust-toolchain.toml`, `clippy.toml` and the Claude Code hooks.
+- **A check that could not run is exit 2.** `verify` and `verify-diff` exit 2
+  (when there is no error finding) if a check could not run: a Rust build
+  that does not compile, or cargo missing or timing out. Before, a TypeScript
+  repo had no such case.
+- **Behaviour change for TypeScript repos that contain a `Cargo.toml`** (a
+  Tauri app, a native module): they are now detected as mixed, so `verify`,
+  `verify-diff` and `hook-stop` also run clippy and rustfmt, `doctor` reports
+  the Rust tools and wiring checks, and a machine without cargo gets exit 2
+  from `verify`. To keep the old behaviour, set
+  `[languages] enabled = ["typescript"]`.
+- Recording schema v2. The migration only adds columns and keeps every v1
+  row (tested on a copy of a real database: every table's row count is the
+  same before and after):
+  - `runs.languages`;
+  - `run_parts.language`. A run now has its usual findings row with
+    `language` NULL, plus one findings row per language checked, so readers
+    that select one findings row per run add `AND language IS NULL`;
+  - `run_wiring.adapter`;
+  - `tool` in `run_rule_counts`, `run_findings` and `findings_latest`;
+  - in `projects_latest`: `languages`, `findings_unavailable` and the
+    `wiring_rust_*` columns.
+
+  **guardrails 0.3 refuses a v2 database** ("the database is schema v2; this
+  guardrails writes v1"). A database shared by several writers and readers
+  must have all of them upgraded together.
+
 ## 0.3.1 (2026-11-22)
 
 - doctor, snapshot and verify recognise a checkout of this package by its

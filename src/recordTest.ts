@@ -181,6 +181,8 @@ function record(over: Partial<RunRecord>): RunRecord {
     overrides: { status: "skipped" },
     wiring: { status: "skipped" },
     metrics: { status: "skipped" },
+    languages: ["typescript"],
+    languageFindings: [],
     ...over,
   };
 }
@@ -486,7 +488,7 @@ async function cliCases(): Promise<void> {
     });
     const stopRun = rows(
       db,
-      "SELECT x.id, p.scope FROM runs x JOIN run_parts p ON p.run_id = x.id AND p.part = 'findings' WHERE x.command = 'hook-stop'",
+      "SELECT x.id, p.scope FROM runs x JOIN run_parts p ON p.run_id = x.id AND p.part = 'findings' AND p.language IS NULL WHERE x.command = 'hook-stop'",
     );
     check(
       "hook-stop records its diff findings",
