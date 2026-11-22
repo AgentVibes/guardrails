@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { match } from "ts-pattern";
 import { runDeploy } from "./deploy.js";
@@ -102,6 +103,33 @@ async function main(argv: string[]): Promise<number> {
   const updateBaseline = takeBoolFlag("--update-baseline");
   const force = takeBoolFlag("--force");
   const snapshot = takeBoolFlag("--snapshot");
+
+  // `deploy` hands its args to a plugin verbatim, so its flags are not ours to
+  // judge. Every other subcommand: `--help` is help, and any other leftover
+  // `-x` is a usage error. Before this, an unknown flag fell through as a scan
+  // TARGET — `metrics --help` reached ast-grep as `--help`, ast-grep printed
+  // its own help text to stdout and exited 0, and the JSON parse crashed.
+  if (command !== "deploy") {
+    if (filtered.includes("--help") || filtered.includes("-h")) {
+      console.log(USAGE);
+      return 0;
+    }
+    const unknown = filtered.filter((a) => a.startsWith("-"));
+    if (unknown.length > 0) {
+      console.error(`guardrails ${command}: unknown option(s) ${unknown.join(" ")}\n`);
+      console.error(USAGE);
+      return 2;
+    }
+  }
+  // Path targets must exist: ast-grep reports a missing path on stderr and
+  // still exits 0 with an empty result, which would read as a clean scan.
+  if (command === "verify" || command === "metrics" || command === "leaks") {
+    const missing = filtered.filter((t) => !existsSync(t));
+    if (missing.length > 0) {
+      console.error(`guardrails ${command}: no such file or directory: ${missing.join(" ")}`);
+      return 2;
+    }
+  }
 
   // ast-grep-ignore: non-exhaustive-match -- `command` is arbitrary CLI input (open string), not a closed union; the otherwise arm IS the unknown-subcommand error path
   return match(command)
