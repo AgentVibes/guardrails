@@ -325,6 +325,28 @@ on the same line is not listed. Text that looks like a directive at the start of
 a line inside a template string is listed, because the scan does not parse
 strings.
 
+## Wiring
+
+`guardrails doctor` reports whether guardrails actually runs in the repo, as
+separate checks, each with its evidence (`doctor --json` → `wiring`; from
+code, `detectWiring(root)` from `@agentvibes/guardrails/wiring`):
+
+| check | passes when |
+|---|---|
+| `installed` | the root `package.json` lists `@agentvibes/guardrails` in `dependencies` or `devDependencies` |
+| `sgconfig-canon` | `sgconfig.yml` `ruleDirs` lists `node_modules/@agentvibes/guardrails/rules`, so editors and bare `ast-grep` runs see the canon |
+| `lint-script` | the `lint` or `check` script runs `guardrails verify\|verify-diff\|doctor\|metrics\|leaks`, directly, through one other package script, or through one file it runs (`scripts/lint/gate.sh`) |
+| `ci` | a file in `.github/workflows`, `.gitea/workflows` or `.gitlab-ci.yml` uses the reusable gate, runs guardrails, or runs the lint script that passed above |
+| `hook-postedit` | `.claude/settings.json` has a `PostToolUse` hook whose command runs `guardrails hook-postedit`, through any wrapper |
+| `hook-stop` | the same for a `Stop` hook and `guardrails hook-stop` |
+| `preset` | no undeclared biome preset drift |
+
+The state is `on` when every check passes AND the repo has no override of the
+canon (see "Overrides"); `off` when nothing but the preset check passes;
+`partial` otherwise, which includes "fully wired, but overrides something".
+Wiring is a report: it never changes `doctor`'s exit code, which stays the
+tools-and-drift verdict.
+
 ## Rules and fixtures
 
 - `rules/` — the canon. Stable ids, each message is a mini-manual (why + fix).
