@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Per-file length ratchet: files in test directories (`tests/`, `test/`,
+  `e2e/`, `spec/`, `__tests__/`, `__e2e__/`, `__mocks__/`) are test code and no
+  longer gated, and `files_over_sloc_limit` counts the same files as the gate.
+  An existing baseline that lists such files is not checked for them, and the
+  next `--update-baseline` drops their entries.
 - Comments, rule notes and docs no longer name private issue ids, private
   consumer repositories or internal notes; they describe the case in plain
   words. `.guardrails/leaks.txt` makes `pnpm leaks` fail on an issue id, so

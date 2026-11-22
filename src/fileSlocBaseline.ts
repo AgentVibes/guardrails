@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { match } from "ts-pattern";
+import { TEST_FILE_PATH } from "./testPaths.js";
 import { readTomlTable } from "./tomlTable.js";
 
 // Per-file length ratchet. A file may hold at most `threshold` SLOC (default
@@ -19,6 +20,17 @@ import { readTomlTable } from "./tomlTable.js";
 // hysteresis: any shrink tightens.
 
 export const DEFAULT_MAX_FILE_SLOC = 500;
+
+/**
+ * Whether a file (by baseline key) is under the length ratchet. Test code is
+ * not: besides the `*.test.*` files every metric drops (EXCLUDED_FILE), a file
+ * in a test directory (`tests/`, `e2e/`, `__mocks__/`, …) is test code too,
+ * such as a shared harness or an end-to-end script. The project-wide metrics
+ * keep their own file set, so their committed baselines do not move.
+ */
+export function lengthGated(key: string): boolean {
+  return !TEST_FILE_PATH.test(key);
+}
 export const FILE_SLOC_RULE = "file-sloc";
 
 export class FileSlocConfigError extends Error {}
@@ -168,7 +180,8 @@ export function updateFileSloc(
   for (const [file, ceiling] of Object.entries(oldFiles)) {
     const sloc = measured.get(file);
     if (sloc === undefined) {
-      if (exists(file)) files[file] = ceiling;
+      // A test-directory file listed by an older guardrails is no longer gated.
+      if (exists(file) && lengthGated(file)) files[file] = ceiling;
       else dropped.push(file);
       continue;
     }

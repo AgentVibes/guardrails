@@ -7,6 +7,7 @@ import {
   describeViolation,
   FILE_SLOC_RULE,
   fileSlocBaselinePath,
+  lengthGated,
   maxFileSloc,
   readFileSlocBaseline,
 } from "./fileSlocBaseline.js";
@@ -77,6 +78,7 @@ export function fileSlocFindings(
       .with({ kind: "unreadable" }, () => undefined)
       .with({ kind: "measured" }, ({ sloc }) => {
         const key = baselineKey(cwd, file);
+        if (!lengthGated(key)) return;
         measured.set(key, sloc);
         absByKey.set(key, file);
       })
