@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.0 (2026-11-22)
+
 - Per-file length ratchet: files in test directories (`tests/`, `test/`,
   `e2e/`, `spec/`, `__tests__/`, `__e2e__/`, `__mocks__/`) are test code and no
   longer gated, and `files_over_sloc_limit` counts the same files as the gate.
