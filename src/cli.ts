@@ -12,6 +12,7 @@ import { runLeaks } from "./leaks.js";
 import { runMetrics } from "./metrics.js";
 import { NOT_RECORDING, RunCollector, recordRun, resolveTarget } from "./record/record.js";
 import { runSnapshot } from "./snapshot.js";
+import { runTime } from "./time.js";
 import { ToolMissingError } from "./toolResolve.js";
 import { runVerify } from "./verify.js";
 import { runVerifyDiff } from "./verifyDiff.js";
@@ -40,6 +41,11 @@ Usage:
                                       uses guardrails; writes nothing into it;
                                       exit 2 only when the record fails
 
+  guardrails time [--name N] -- CMD   run CMD, pass its output and exit code
+                                      through; while recording, store its
+                                      wall-clock time as metric N (build_ms)
+                                      when it exits 0
+
   guardrails leaks [paths]            public/private boundary gate: scan for
                                       private-infrastructure markers and token
                                       patterns (+ gitleaks when available);
@@ -61,16 +67,20 @@ Usage:
                                       back, repeat to green or --max (6)
 
 All subcommands accept --json.
-GUARDRAILS_RECORD=1 (or a database path) records verify, verify-diff, metrics
-and hook-stop runs into SQLite; see README "Recording".
+GUARDRAILS_RECORD=1 (or a database path) records verify, verify-diff, metrics,
+hook-stop and time runs into SQLite; see README "Recording".
 Exit codes: 0 ok · 1 findings/regression · 2 usage, missing tool, or missing baseline
 `;
 
 /** Commands whose runs are recorded when GUARDRAILS_RECORD is on (README "Recording"). */
-const RECORDED = new Set(["verify", "verify-diff", "metrics", "hook-stop"]);
+const RECORDED = new Set(["verify", "verify-diff", "metrics", "hook-stop", "time"]);
 
 async function main(argv: string[]): Promise<number> {
   const args = [...argv];
+  // `time` runs another command: everything after the first `--` is that
+  // command's argv, never our flags (`time -- tsc --help` must not print our help).
+  const separator = argv[0] === "time" ? args.indexOf("--") : -1;
+  const child = separator < 0 ? undefined : args.splice(separator).slice(1);
   const json = args.includes("--json");
   const filtered = args.filter((a) => a !== "--json");
   const command = filtered.shift();
@@ -111,6 +121,11 @@ async function main(argv: string[]): Promise<number> {
   const cmd = takeValueFlag("--cmd") ?? undefined;
   const gateCmd = takeValueFlag("--gate") ?? undefined;
   const max = takeValueFlag("--max") ?? undefined;
+  const metricName = takeValueFlag("--name");
+  if (metricName === null) {
+    console.error("guardrails: --name requires a metric name");
+    return 2;
+  }
   const check = takeBoolFlag("--check");
   const updateBaseline = takeBoolFlag("--update-baseline");
   const force = takeBoolFlag("--force");
@@ -174,6 +189,7 @@ async function main(argv: string[]): Promise<number> {
     .with("deploy", () => runDeploy(filtered, json))
     .with("hook-postedit", () => runHookPostedit())
     .with("hook-stop", () => runHookStop(run))
+    .with("time", () => runTime({ name: metricName, stray: filtered, child, json, run }))
     .with("iterate", () =>
       runIterate({
         task,

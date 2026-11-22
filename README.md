@@ -52,6 +52,7 @@ All subcommands accept `--json`.
 | `guardrails init` | writes `sgconfig.yml`, `biome.json` (extends the preset), and a detected-and-materialized `[stack]` in `.agentvibes/project.toml` | 0 |
 | `guardrails metrics [paths]` | per-component (loc, hooks, props, observer, JSX depth, branching), per-file (sloc, context-cost) and per-project metrics; `--check` compares the GATED set against the committed `.guardrails/metrics.json` baseline (recomputes facts, never trusts the file); `--update-baseline` tightens it (2% hysteresis, never loosens without `--force`); `--snapshot` appends a JSONL trend row. Both `--check` and `--update-baseline` also run the [per-file length ratchet](#per-file-length-ratchet) | 1 on ratchet regression, 2 when `--check` finds no baseline or the length threshold is invalid |
 | `guardrails snapshot [path]` | records one checkout (default `.`) into the [recording database](#recording), whether or not that repo uses guardrails; writes nothing into it | 2 when the path is not a directory or the record cannot be written; never 1 |
+| `guardrails time [--name N] -- CMD` | runs CMD with its output passed through; while [recording](#recording), stores its wall-clock time in ms as metric N (default `build_ms`) when it exits 0 | CMD's own exit code; 127 when CMD cannot start; 2 on a usage error |
 
 Gated (ratchet, lower = better): p90 component_loc, useState density,
 inline-map-row count, p90 context-cost, runInAction count, async-in-store,
@@ -366,7 +367,7 @@ off unless you turn it on.
 - Default database: `$XDG_STATE_HOME/agentvibes/guardrails.sqlite`
   (`~/.local/state/…` when unset). The directory is created on first write.
 
-`verify`, `verify-diff`, `metrics` and `hook-stop` record. `hook-postedit`,
+`verify`, `verify-diff`, `metrics`, `hook-stop` and `time` record. `hook-postedit`,
 `doctor`, `init`, `leaks`, `deploy` and `iterate` do not. A database that
 cannot be written prints one line on stderr and never changes the exit code:
 a state database is not a gate.
@@ -399,6 +400,7 @@ reason), or `skipped` (this command does not measure it).
 | `hook-stop` | error tier only, `diff` | skipped | skipped | skipped |
 | `metrics` | skipped | skipped | skipped | `full` or `paths` |
 | `snapshot` | all tiers, `full` | `full` | `full` | `full` |
+| `time` | skipped | skipped | skipped | `full` (one metric), or `unavailable` when CMD did not exit 0 |
 
 ### Schema (version 1)
 
@@ -457,6 +459,13 @@ the `*_run_id` columns say which run each group of columns came from.
   `git_local_branches`;
 - `errors`, `warnings`, `overrides` and `overrides_without_reason` from a
   full `verify` or `snapshot`.
+
+`guardrails time -- pnpm build` adds `build_ms` (or the `--name` metric,
+matching `[a-z][a-z0-9_.]*`). Everything after the first `--` is the
+command's, so its flags never reach guardrails. A run that does not exit 0
+is still recorded, with its exit code, but stores no time: a build that
+failed halfway is not a build time. A time run changes only its own metric
+in `projects_latest`; the other columns keep their values.
 
 `projects_latest` reads `files` from `fileCount`, `run_in_action` from
 `runInActionCount`, `worktrees` and `local_branches` from the `git_*`
