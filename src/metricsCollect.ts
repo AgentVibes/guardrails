@@ -1,7 +1,7 @@
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import type { ImportDeclaration, Node, Program } from "oxc-parser";
+import type { Node, Program } from "oxc-parser";
 import { scan } from "./astGrep.js";
+import { dropGitignored, EXCLUDED_FILE, importDecls, slocOf } from "./fileSloc.js";
 import { collectFiles } from "./fileWalk.js";
 import type {
   BranchingCounts,
@@ -21,10 +21,6 @@ import {
 import { rulesConfig, structureConfig } from "./packagePaths.js";
 import { classifyLines, codeLinesInRange } from "./sourceLines.js";
 
-// Production code only — same exclusions the vault audit used (§1: "тесты/
-// showcase исключены"), so numbers stay comparable to the audit baselines.
-const EXCLUDED_FILE = /\.(test|spec|stories)\.[jt]sx?$|__tests__|\/showcase\/|\.d\.ts$/;
-
 const HOOK_NAMES = ["useState", "useEffect", "useMemo", "useCallback", "useRef"] as const;
 
 // Async-progress flag names. Deliberately NOT every boolean (sidebarVisible,
@@ -32,27 +28,6 @@ const HOOK_NAMES = ["useState", "useEffect", "useMemo", "useCallback", "useRef"]
 // Resource<T>/QueryState union should own.
 const PROGRESS_FLAG =
   /^(is)?\w*([lL]oading|[pP]ending|[fF]etching|[sS]aving|[bB]usy|[rR]efreshing|[sS]canning|[eE]xporting|[iI]mporting|[sS]yncing|[sS]ubmitting|[pP]rocessing|[gG]enerating|[bB]uilding|[cC]onnecting)$/;
-
-/**
- * Metrics describe the PROJECT — its tracked source — so gitignored files
- * (generated code, local build output) are dropped. Without this the numbers
- * depend on which machine ran them: a fresh CI checkout has no generated
- * files, a dev tree does, and the p90s disagree (observed: p90ContextCost
- * 20 locally vs 21 in CI on the same commit). The ast-grep-backed counters
- * were already deterministic — ast-grep honors .gitignore natively.
- */
-function dropGitignored(files: string[]): string[] {
-  if (files.length === 0) return files;
-  const res = spawnSync("git", ["check-ignore", "--stdin"], {
-    input: files.join("\n"),
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  // Outside a repo (or git missing) there is no ignore standard to apply.
-  if (res.error || res.status === null || res.status > 1) return files;
-  const ignored = new Set(res.stdout.split("\n").filter((l) => l !== ""));
-  return files.filter((f) => !ignored.has(f));
-}
 
 export interface CollectedMetrics {
   components: ComponentMetrics[];
@@ -203,25 +178,9 @@ function declNodeFor(file: ParsedFile, name: string, line: number): Node | undef
   return byLine ?? byName;
 }
 
-function importDecls(program: Program): ImportDeclaration[] {
-  return program.body.filter((stmt): stmt is ImportDeclaration =>
-    isKind(stmt, "ImportDeclaration"),
-  );
-}
-
 /** Default, namespace and named bindings each count one — as the import clause's names did. */
 function fileImportedIdentifiers(program: Program): number {
   return importDecls(program).reduce((n, stmt) => n + stmt.specifiers.length, 0);
-}
-
-function importLineSet(file: ParsedFile): Set<number> {
-  const lines = new Set<number>();
-  for (const stmt of importDecls(file.program)) {
-    const start = file.lineAt(stmt.start);
-    const end = file.lineAt(stmt.end);
-    for (let l = start; l <= end; l++) lines.add(l);
-  }
-  return lines;
 }
 
 /** `loading: boolean`, or an untyped class field initialised to `true` / `false`. */
@@ -313,11 +272,7 @@ export function collectMetrics(targets: string[]): CollectedMetrics {
     }
     const parsed = parseFile(file, text);
     const kinds = classifyLines(text);
-    const importLines = importLineSet(parsed);
-    let fileSloc = 0;
-    kinds.forEach((k, i) => {
-      if (k === "code" && !importLines.has(i + 1)) fileSloc += 1;
-    });
+    const fileSloc = slocOf(parsed, text);
 
     collectStoreMetrics(parsed.program, store);
 
