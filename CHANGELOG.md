@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0 (2026-11-22)
+
 - Languages. guardrails runs one adapter per language: `typescript`
   (`package.json` or `tsconfig.json`) and, new, `rust` (a `Cargo.toml`).
   Both found is a mixed repo; neither is `typescript`, as before. Set the
