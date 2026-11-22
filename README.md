@@ -276,6 +276,55 @@ inert and can be deleted. Valid and invalid example trees are in
 The reusable gate workflow runs `verify-diff`, not `verify`, so a repo should
 add a `guardrails doctor` (or `verify`) step to its own CI to gate drift there.
 
+A rule the list above does not allow becomes legal when the repo declares it
+with a reason (see "Overrides" below): an `[[override]]` with
+`kind = "biome-rule"`, the same `<group>/<rule>`, the override entry's
+`includes` exactly as `paths` (none for a repo-wide `linter.rules`), and a
+non-empty `reason`. A top-level `linter` is then allowed only when it holds
+nothing but declared `rules`. A declaration with other paths or no reason does
+not count, and `extends`, the formatter keys, `assist` and a second config are
+never escapable: they fork the preset.
+
+## Overrides
+
+An override is any place a repo deviates from the canon. `guardrails verify`
+and `guardrails doctor` list every one with its reason. Each override is a
+warning finding, `canon-overridden`, even when it has a reason: the reason makes
+the deviation legitimate, not invisible. A reason-less one is a second warning,
+`override-without-reason`. Warnings do not change an exit code. A repo that is
+wired but overrides anything counts as partially wired, not fully wired.
+`verify --json` and `doctor --json` carry the list as `overrides`; from
+code, `collectOverrides(root)` from `@agentvibes/guardrails/overrides` returns it.
+
+| kind | what | where the reason goes |
+|---|---|---|
+| `ast-grep-ignore` | `// ast-grep-ignore: <id>[, <id>]`, `/* … */`, the JSX form `{/* … */}`, and the bare `// ast-grep-ignore` (every rule, listed as `*`) | in the comment: `-- <why>` after the ids |
+| `biome-ignore` | `// biome-ignore[-all\|-start] lint/<group>/<rule>` | in the comment: `: <why>`; biome's placeholder `<explanation>` is not a reason |
+| `verify-scope` | `[verify] screens`, `kit_source`, `exclude` | `[[override]]`, `rule` = the key |
+| `biome-rule` | a rule in a `biome.json` `overrides` entry or in `linter.rules`, `noConsole` included | `[[override]]`, `rule` = `<group>/<rule>`, `paths` = the entry's `includes` |
+| `repo-rule-shadow` | a rule in a repo `ruleDir` that reuses a canon rule id | `[[override]]`, `rule` = the id |
+| `metrics-limit` | `[metrics] max_file_sloc` above the default 500 | `[[override]]`, `rule = "max_file_sloc"` |
+
+```toml
+# .agentvibes/project.toml
+[[override]]
+kind   = "biome-rule"
+rule   = "suspicious/noUndeclaredEnvVars"
+paths  = ["**/scripts/**"]
+reason = "deploy scripts read env set by the CI runner"
+```
+
+Not overrides: a `[severity]` raise and a lower `max_file_sloc` make the gate
+stricter, and a severity lowering is refused outright. A declaration that
+matches nothing in the repo is a warning, `override-declared-unused`. An
+`[[override]]` table that does not parse, or names an unknown kind or key, is
+drift: `verify` exits 2 and `doctor` exits 1 with the entry named.
+
+Inline directives are read only where they start a line. A directive after code
+on the same line is not listed. Text that looks like a directive at the start of
+a line inside a template string is listed, because the scan does not parse
+strings.
+
 ## Rules and fixtures
 
 - `rules/` — the canon. Stable ids, each message is a mini-manual (why + fix).

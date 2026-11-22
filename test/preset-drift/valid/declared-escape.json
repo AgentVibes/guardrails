@@ -1,0 +1,18 @@
+{
+  "biome.json": {
+    "extends": ["@agentvibes/guardrails/biome"],
+    "overrides": [
+      {
+        "includes": ["**/scripts/**"],
+        "linter": {
+          "rules": {
+            "suspicious": {
+              "noUndeclaredEnvVars": "off"
+            }
+          }
+        }
+      }
+    ]
+  },
+  ".agentvibes/project.toml": "[[override]]\nkind = \"biome-rule\"\nrule = \"suspicious/noUndeclaredEnvVars\"\npaths = [\"**/scripts/**\"]\nreason = \"deploy scripts read env the runner sets\"\n"
+}

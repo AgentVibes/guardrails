@@ -1,0 +1,13 @@
+{
+  "biome.json": {
+    "extends": ["@agentvibes/guardrails/biome"],
+    "linter": {
+      "rules": {
+        "style": {
+          "useConst": "off"
+        }
+      }
+    }
+  },
+  ".agentvibes/project.toml": "[[override]]\nkind = \"biome-rule\"\nrule = \"style/useConst\"\nreason = \"generated code assigns once through a builder\"\n"
+}

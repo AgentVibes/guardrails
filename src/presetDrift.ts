@@ -1,5 +1,11 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import {
+  findBiomeDeclaration,
+  OverrideConfigError,
+  type OverrideDeclaration,
+  readOverrideDeclarations,
+} from "./overrideDeclarations.js";
 import { packageRoot } from "./packagePaths.js";
 
 // Preset-drift guard (is-9c7a78d7). The migration epic is-a70a5963 collapses 37
@@ -24,6 +30,21 @@ import { packageRoot } from "./packagePaths.js";
 // acceptance of is-9c7a78d7 requires. Up to 0.2.4 it gated only where a repo
 // had opted in with `[biome] preset = "enforced"`; that line is now inert, and
 // a repo that has not migrated goes red the day it upgrades guardrails.
+//
+// DECLARED ESCAPES. Any other rule a repo turns off or reconfigures is drift
+// unless the repo declares it with a reason in .agentvibes/project.toml:
+//
+//   [[override]]
+//   kind   = "biome-rule"
+//   rule   = "suspicious/noUndeclaredEnvVars"
+//   paths  = ["**/scripts/**"]          # the override entry's includes, exactly
+//   reason = "<why>"
+//
+// The declaration must name the same rule and the same path set as the
+// override entry (no paths = the repo-wide `linter.rules`), and its reason must
+// not be empty. A top-level `linter` is then allowed only when it holds nothing
+// but declared `rules`. `extends`, the formatter keys, `assist` and a second
+// config stay hard failures: those are a fork of the preset, not a rule escape.
 //
 // A repo with no biome config at all is not drifting and reports nothing —
 // there is no config to have re-grown. `guardrails doctor` still shows it as
@@ -65,10 +86,14 @@ const TEST_PATH =
  * entry with no `includes`, or with one non-test glob among them, is not
  * test-scoped: the carve-out would then reach production files.
  */
-function testScoped(entry: Record<string, unknown>): boolean {
+/** An override entry's path globs (`includes`, or the older `files`). */
+function includesOf(entry: Record<string, unknown>): string[] {
   const raw = entry.includes ?? entry.files;
-  if (!Array.isArray(raw)) return false;
-  const positive = raw.filter((g): g is string => typeof g === "string" && !g.startsWith("!"));
+  return Array.isArray(raw) ? raw.filter((g): g is string => typeof g === "string") : [];
+}
+
+function testScoped(entry: Record<string, unknown>): boolean {
+  const positive = includesOf(entry).filter((g) => !g.startsWith("!"));
   return positive.length > 0 && positive.every((g) => TEST_PATH.test(g));
 }
 
@@ -124,6 +149,22 @@ export function findBiomeConfigs(root: string): string[] {
   return out.sort();
 }
 
+/** The root biome.json, parsed; undefined when absent or unreadable. */
+export function readBiomeRoot(root: string): BiomeConfig | undefined {
+  const path = join(root, "biome.json");
+  return existsSync(path) ? readConfig(path) : undefined;
+}
+
+/** True when the repo declared this rule at exactly these paths, with a non-empty reason. */
+function declaredEscape(
+  declarations: readonly OverrideDeclaration[],
+  rule: string,
+  paths: readonly string[],
+): boolean {
+  const d = findBiomeDeclaration(declarations, rule, paths);
+  return d !== undefined && d.reason.trim() !== "";
+}
+
 function readConfig(path: string): BiomeConfig | undefined {
   try {
     // biome.jsonc allows comments; strip line comments before parsing rather
@@ -154,7 +195,10 @@ function isPresetSource(root: string): boolean {
 }
 
 /** Overrides that do more than turn `noConsole` off for some paths. */
-function offendingOverrides(config: BiomeConfig): string[] {
+function offendingOverrides(
+  config: BiomeConfig,
+  declarations: readonly OverrideDeclaration[],
+): string[] {
   const overrides = config.overrides;
   // ast-grep-ignore: silent-default-return -- "no overrides key" and "overrides is not a list" both mean the config has no override to object to; [] is the real answer, not a swallowed failure
   if (!Array.isArray(overrides)) return [];
@@ -168,27 +212,33 @@ function offendingOverrides(config: BiomeConfig): string[] {
         bad.push(`overrides[${i}].${key}`);
         continue;
       }
-      // A linter override may touch exactly two rules, both under `suspicious`,
-      // and nothing else: `noConsole` (a CLI has to print) and
-      // `noEmptyBlockStatements` SCOPED TO TESTS. See OVERRIDABLE below.
-      const rules = (o.linter as Record<string, unknown> | undefined)?.rules;
+      // A linter override may carry only `rules`. Each rule must be either one
+      // of the two carve-outs (OVERRIDABLE, both under `suspicious`) or a
+      // declared escape at exactly this entry's paths.
+      const linter = o.linter;
+      const linterKeys = typeof linter === "object" && linter !== null ? Object.keys(linter) : [];
+      const rules = (linter as Record<string, unknown> | undefined)?.rules;
       const groups =
         typeof rules === "object" && rules !== null ? (rules as Record<string, unknown>) : {};
-      const groupNames = Object.keys(groups);
-      const onlySuspicious = groupNames.length === 1 && groupNames[0] === "suspicious";
-      const suspicious = groups.suspicious;
-      const ruleNames =
-        typeof suspicious === "object" && suspicious !== null ? Object.keys(suspicious) : [];
-      const allOverridable = ruleNames.length > 0 && ruleNames.every((r) => OVERRIDABLE.has(r));
-      if (!onlySuspicious || !allOverridable) {
+      const paths = includesOf(o);
+      const named: Array<{ group: string; rule: string }> = [];
+      for (const [group, body] of Object.entries(groups)) {
+        const ruleNames = typeof body === "object" && body !== null ? Object.keys(body) : [];
+        for (const rule of ruleNames) named.push({ group, rule });
+      }
+      const undeclared = named.filter(
+        (r) => !declaredEscape(declarations, `${r.group}/${r.rule}`, paths),
+      );
+      const allowed = undeclared.every((r) => r.group === "suspicious" && OVERRIDABLE.has(r.rule));
+      if (named.length === 0 || linterKeys.some((k) => k !== "rules") || !allowed) {
         bad.push(
-          `overrides[${i}].linter.rules (only ${[...OVERRIDABLE].map((r) => `suspicious.${r}`).join(" and ")} may be overridden)`,
+          `overrides[${i}].linter.rules (only ${[...OVERRIDABLE].map((r) => `suspicious.${r}`).join(" and ")} may be overridden without a declaration; declare any other rule as [[override]] kind = "biome-rule" with these exact paths and a reason)`,
         );
         continue;
       }
       // The empty-block carve-out is for TEST code only. Unscoped, it would be
-      // the whole rule switched off through a loophole.
-      if (ruleNames.includes("noEmptyBlockStatements") && !testScoped(o)) {
+      // the whole rule switched off through a loophole — unless declared.
+      if (undeclared.some((r) => r.rule === "noEmptyBlockStatements") && !testScoped(o)) {
         bad.push(
           `overrides[${i}].linter.rules.suspicious.noEmptyBlockStatements (allowed only for test paths — every entry in \`includes\` must name a test file or directory)`,
         );
@@ -208,6 +258,16 @@ export function presetDrift(root: string): DriftFinding[] {
 
   const findings: DriftFinding[] = [];
   const source = isPresetSource(root);
+  // A declaration file the gate cannot read is itself drift: silently treating
+  // it as "nothing declared" would turn every declared escape into a failure
+  // with the wrong reason, and treating it as "everything declared" is worse.
+  let declarations: OverrideDeclaration[] = [];
+  try {
+    declarations = readOverrideDeclarations(root);
+  } catch (err) {
+    if (!(err instanceof OverrideConfigError)) throw err;
+    findings.push({ key: "override-config", detail: err.message });
+  }
 
   // (c) One config, at the root. The preset source itself carries a second one
   // — `configs/biome.json` IS the preset — and that is not drift.
@@ -252,7 +312,10 @@ export function presetDrift(root: string): DriftFinding[] {
   }
 
   // (b) Does not restate what the preset decides.
-  const owned = PRESET_OWNED.filter((k) => config[k] !== undefined);
+  const owned = PRESET_OWNED.filter(
+    (k) =>
+      config[k] !== undefined && !(k === "linter" && linterIsDeclared(config.linter, declarations)),
+  );
   const nested = PRESET_OWNED_NESTED.filter(
     (k) => (config[k] as Record<string, unknown> | undefined)?.formatter !== undefined,
   ).map((k) => `${k}.formatter`);
@@ -264,15 +327,28 @@ export function presetDrift(root: string): DriftFinding[] {
     });
   }
 
-  const badOverrides = offendingOverrides(config);
+  const badOverrides = offendingOverrides(config, declarations);
   if (badOverrides.length > 0) {
     findings.push({
       key: "overrides",
-      detail: `${badOverrides.join(", ")} — an override may only scope paths and turn suspicious.noConsole off`,
+      detail: `${badOverrides.join(", ")} — an override may only scope paths, turn suspicious.noConsole off, or turn off a rule declared in [[override]]`,
     });
   }
 
   return findings;
+}
+
+/** A top-level `linter` holding only `rules`, every one of them declared repo-wide. */
+function linterIsDeclared(linter: unknown, declarations: readonly OverrideDeclaration[]): boolean {
+  if (typeof linter !== "object" || linter === null) return false;
+  const keys = Object.keys(linter);
+  if (keys.length !== 1 || keys[0] !== "rules") return false;
+  const rules = (linter as { rules: unknown }).rules;
+  if (typeof rules !== "object" || rules === null) return false;
+  const named = Object.entries(rules).flatMap(([group, body]) =>
+    typeof body === "object" && body !== null ? Object.keys(body).map((r) => `${group}/${r}`) : [],
+  );
+  return named.length > 0 && named.every((r) => declaredEscape(declarations, r, []));
 }
 
 /** The one-line message the gate prints; "" when there is no drift. */

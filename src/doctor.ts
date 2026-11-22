@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { match } from "ts-pattern";
+import { OverrideConfigError } from "./overrideDeclarations.js";
+import { collectOverrides, type OverrideReport } from "./overrides.js";
 import { packageRoot, rulesDir, structureRulesDir } from "./packagePaths.js";
 import { driftMessage, presetDrift } from "./presetDrift.js";
 import { declaredRuleDirs } from "./repoRules.js";
@@ -87,6 +90,20 @@ function discoverConfigs(cwd: string): Record<string, string> {
   return found;
 }
 
+type OverridesRead =
+  | ({ status: "read" } & OverrideReport)
+  | { status: "unreadable"; error: string };
+
+/** The overrides inventory for doctor: reported, never gating (drift already gates a bad declaration file). */
+function readOverrides(root: string): OverridesRead {
+  try {
+    return { status: "read", ...collectOverrides(root) };
+  } catch (err) {
+    if (err instanceof OverrideConfigError) return { status: "unreadable", error: err.message };
+    throw err;
+  }
+}
+
 export function runDoctor(json: boolean): number {
   const version = (
     JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { version: string }
@@ -105,6 +122,7 @@ export function runDoctor(json: boolean): number {
     // Preset drift (is-9c7a78d7): reported and gated in every repo, the same
     // rule `verify` applies.
     presetDrift: { findings: presetDrift(process.cwd()) },
+    overrides: readOverrides(process.cwd()),
   };
 
   if (json) {
@@ -132,10 +150,22 @@ export function runDoctor(json: boolean): number {
       console.log("biome preset  DRIFT");
       for (const f of result.presetDrift.findings) console.log(`  ${f.detail}`);
     }
+    printOverrides(result.overrides);
   }
   const allFound = result.tools["ast-grep"].found && result.tools.biome.found;
   const drifted = result.presetDrift.findings.length > 0;
   if (drifted && !json)
     console.error(`guardrails doctor: ${driftMessage(result.presetDrift.findings)}`);
   return allFound && !drifted ? 0 : 1;
+}
+
+function printOverrides(read: OverridesRead): void {
+  match(read)
+    .with({ status: "unreadable" }, (r) => console.log(`overrides     UNREADABLE — ${r.error}`))
+    .with({ status: "read" }, (r) => {
+      const missing = r.overrides.filter((o) => o.reason.status === "missing");
+      console.log(`overrides     ${r.overrides.length}, ${missing.length} without a reason`);
+      for (const f of r.findings) console.log(`  ${f.rule}: ${f.message}`);
+    })
+    .exhaustive();
 }

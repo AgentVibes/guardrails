@@ -81,7 +81,8 @@ for (const [name, source, expectReported, what] of cases) {
     // verify-diff gates the whole tree here.
     for (const command of ["verify", "verify-diff"] as const) {
       const out = run(root, command);
-      const reported = out.includes("classname-not-composed");
+      // The finding tag, not the bare id: the override inventory names the rule too.
+      const reported = out.includes("[classname-not-composed]");
       if (reported !== expectReported) {
         fail(
           `${command}: ${what} — expected ${expectReported ? "a finding" : "no finding"}, got the opposite:\n${out}`,
