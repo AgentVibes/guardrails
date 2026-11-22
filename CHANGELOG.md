@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Recording: the first runs that race on a new database no longer lose a
+  write. Switching the file to WAL opens a read transaction and upgrades it
+  to a write, and SQLite does not apply busy_timeout to that upgrade, so a
+  losing run got "database is locked" at once. The switch now retries for up
+  to 5 s.
 - `time`: `--name` is read only for `time`, so `guardrails deploy --name x`
   passes `--name x` to the deploy plugin again. `guardrails --json time -- CMD`
   also leaves the flags after `--` to CMD.
