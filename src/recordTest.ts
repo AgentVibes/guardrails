@@ -204,6 +204,62 @@ const FULL = record({
   metrics: { status: "measured", scope: "full", data: { runInActionCount: 4, sloc: 900 } },
 });
 
+// RED for the hosted-CI flake (1 of 6 concurrent first runs not recorded):
+// switching a new file to WAL while another connection holds the write lock.
+// SQLite skips busy_timeout for that step, so before the fix openDatabase
+// failed with "database is locked" after ~0 ms. Another process holds
+// BEGIN IMMEDIATE on a rollback-journal file for HOLD_MS, the way a racing
+// first writer holds it mid-switch; openDatabase must wait and succeed.
+async function walSwitchCase(): Promise<void> {
+  const dir = tmp("wal");
+  const db = join(dir, "g.sqlite");
+  const HOLD_MS = 300;
+  const seed = new DatabaseSync(db);
+  seed.exec("CREATE TABLE seed(x)");
+  seed.close();
+  const holder = spawn(
+    "node",
+    [
+      "--no-warnings",
+      "--input-type=module",
+      "-e",
+      `import { DatabaseSync } from "node:sqlite";
+       const d = new DatabaseSync(${JSON.stringify(db)});
+       d.exec("BEGIN IMMEDIATE");
+       console.log("locked");
+       setTimeout(() => { d.exec("COMMIT"); d.close(); }, ${HOLD_MS});`,
+    ],
+    { stdio: ["ignore", "pipe", "inherit"] },
+  );
+  const exited = new Promise<void>((done) => holder.on("close", () => done()));
+  try {
+    await new Promise<void>((done, fail) => {
+      holder.stdout.on("data", (d: Buffer) => {
+        if (d.toString().includes("locked")) done();
+      });
+      holder.on("close", () => fail(new Error("lock holder exited before locking")));
+    });
+    const t0 = Date.now();
+    const outcome = await openDatabase(db).then(
+      (h) => {
+        const mode = h.prepare("PRAGMA journal_mode").get()?.journal_mode;
+        h.close();
+        return `ok ${String(mode)}`;
+      },
+      (err: Error) => `failed: ${err.message}`,
+    );
+    const waited = Date.now() - t0;
+    check(
+      "openDatabase waits out a writer that holds the lock during the WAL switch",
+      outcome === "ok wal" && waited >= HOLD_MS / 2,
+      `${outcome} after ${waited} ms`,
+    );
+  } finally {
+    await exited;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function writerCases(): Promise<void> {
   const dir = tmp("writer");
   const db = join(dir, "nested", "g.sqlite");
@@ -502,6 +558,7 @@ async function cliCases(): Promise<void> {
 async function main(): Promise<number> {
   targetCases();
   repoKeyCases();
+  await walSwitchCase();
   await writerCases();
   await shapeCases();
   await cliCases();

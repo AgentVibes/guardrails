@@ -74,13 +74,53 @@ export function migrate(db: DatabaseSync): void {
   }
 }
 
+const WAL_RETRY_MS = 10;
+
+function isBusy(err: unknown): boolean {
+  // node:sqlite puts the primary result code on `errcode`; SQLITE_BUSY = 5.
+  return (err as { errcode?: unknown }).errcode === 5;
+}
+
+function journalMode(db: DatabaseSync): string {
+  const row = db.prepare("PRAGMA journal_mode = WAL").get() as
+    | { journal_mode?: unknown }
+    | undefined;
+  return String(row?.journal_mode ?? "");
+}
+
+/**
+ * Switches the file to WAL, retrying while another connection holds the lock.
+ *
+ * busy_timeout does not cover this step. Switching a rollback-journal file to
+ * WAL first opens a read transaction, then upgrades it to a write to rewrite
+ * the header, and SQLite never runs the busy handler for a read-to-write
+ * upgrade (it could deadlock). So when several first writers race on a new
+ * file, the losers get SQLITE_BUSY at once, after 0 ms rather than 5 s. Seen
+ * on hosted CI as 1 of 6 concurrent runs not recorded. Once one connection
+ * has switched, the others see WAL in the header and the pragma is a no-op.
+ */
+export function switchToWal(db: DatabaseSync, timeoutMs: number = BUSY_TIMEOUT_MS): void {
+  const deadline = Date.now() + timeoutMs;
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    try {
+      const mode = journalMode(db);
+      if (mode === "wal") return;
+      throw new RecordSchemaError(`PRAGMA journal_mode = WAL left the database in ${mode} mode`);
+    } catch (err) {
+      if (!isBusy(err) || Date.now() >= deadline) throw err;
+    }
+    Atomics.wait(pause, 0, 0, WAL_RETRY_MS);
+  }
+}
+
 export async function openDatabase(path: string): Promise<DatabaseSync> {
   mkdirSync(dirname(path), { recursive: true });
   const { DatabaseSync } = await loadSqlite();
   const db = new DatabaseSync(path, { timeout: BUSY_TIMEOUT_MS });
   try {
     db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
-    db.exec("PRAGMA journal_mode = WAL");
+    switchToWal(db);
     db.exec("PRAGMA foreign_keys = ON");
     migrate(db);
     return db;
