@@ -64,7 +64,7 @@ function signalsOf(name: string, deps: Record<string, string>): AppSignals | und
 
 // Monorepo-aware: the root package.json of a workspace repo is dependency-
 // empty, so signals are gathered from every workspace package too (the
-// observatory adoption hit exactly this — root-only detection said state=none
+// A consumer app's adoption hit exactly this — root-only detection said state=none
 // for a mobx repo). When signal-bearing apps DISAGREE on a field, the
 // aggregate takes the first app's value and a per-app block is materialized
 // for each, so the disagreement is visible in the TOML instead of averaged

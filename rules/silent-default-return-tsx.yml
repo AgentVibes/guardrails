@@ -8,7 +8,7 @@
 # way to say "both languages", so a twin id per language is the only option.
 #
 # Measured 2026-09-06 across the same five repos: 24 findings in `.tsx`
-# (SiteCraft 3, faceless 0, observatory 9, tg-gallery 0, merkle-substrate 12).
+# (per repo: 3, 0, 9, 0, 12).
 #
 # Keep this file's `rule:` block IDENTICAL to `silent-default-return.yml`.
 #

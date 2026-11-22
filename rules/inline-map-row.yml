@@ -1,12 +1,12 @@
 # ── G1, rule 2 of 3: per-row observer extraction ───────────────────────
 #
-# The MobX list rule from CLAUDE.md: mapping an observable collection with the
+# The house MobX list rule: mapping an observable collection with the
 # row body written inline makes the PARENT track every field every row reads, so
 # one item's change invalidates the whole list. Extracting the row into its own
 # `observer` component localises the invalidation.
 #
 # The report's audit found this rule already obeyed everywhere it looked (131
-# `*Row.tsx` files in merkle alone) — so it lands as a ratchet on new code, not
+# `*Row.tsx` files in one monorepo alone) — so it lands as a ratchet on new code, not
 # as a cleanup campaign.
 #
 # Threshold: the mapped element must contain TWO OR MORE nested JSX elements
@@ -44,7 +44,7 @@ message: |
   Extract the body into its own `observer` component and pass the item down:
     {items.map(t => <TaskRow key={t.id} task={t} />)}
   The parent then re-renders only on insert, remove and reorder; each row
-  re-renders on its own fields. See CLAUDE.md "MobX lists" and the
+  re-renders on its own fields. See the house "MobX lists" convention and the
   mobx-components skill.
   Doesn't apply when the mapped children are pure data — constants or plain
   props rather than observables.
@@ -74,11 +74,11 @@ rule:
     # convenience — it is the rule's own rationale made into its scope: the
     # defect is that the PARENT'S reactive scope tracks every field every row
     # reads, and a component with no reactive scope has no such defect. It is
-    # also the only syntactically decidable form of CLAUDE.md's carve-out
+    # also the only syntactically decidable form of the house carve-out
     # ("when the rendered children are pure data … the rule doesn't apply").
     #
     # Measured, not assumed: without this clause the rule fired 50 times in
-    # byoklab/components — a UI library and its examples/docs site, which
+    # a UI library and its examples/docs site, which
     # contain no MobX whatsoever — where every hit was a false positive at
     # `error` severity. With it, 0 there.
     #
@@ -94,10 +94,10 @@ rule:
           - inside:
               stopBy: end
               kind: jsx_expression
-          # CLAUDE.md's own carve-out: "When the rendered children are pure data
+          # The house convention's own carve-out: "When the rendered children are pure data
           # (constants, plain props, not MobX observables), the rule doesn't
           # apply." A literal array is the one case that is provably constant —
-          # observatory's SessionInfoSkeleton maps `[1, 2, 3, 4]` to draw four
+          # a session-viewer app's SessionInfoSkeleton maps `[1, 2, 3, 4]` to draw four
           # placeholder cards, which no amount of extraction improves.
           - not:
               has:

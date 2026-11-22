@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { match } from "ts-pattern";
 import { rulesDir } from "./packagePaths.js";
 
-// The mechanical half of is-fc8916f7. `non-exhaustive-match` was blind to
+// The mechanical half of closing the .tsx language gap. `non-exhaustive-match` was blind to
 // `.tsx` for months and nobody noticed, because a rule that cannot match the
 // language it is pointed at reports exactly what a correct rule with nothing to
 // find reports: zero. `testRules.ts` catches that for every rule it asserts;
@@ -123,8 +123,7 @@ const EXCEPTIONS: Record<string, Exception> = {
 
   // ── Real gaps. Measured, tracked, not silently green. ───────────────────
   // None open. The last four (discriminator-ternary, match-bool-to-null,
-  // hardcoded-url-in-component, ui-imports-app-store) got their `-ts` arms in
-  // is-760b0b4b.
+  // hardcoded-url-in-component, ui-imports-app-store) got their `-ts` arms.
 };
 
 /**

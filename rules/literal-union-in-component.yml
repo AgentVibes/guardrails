@@ -1,12 +1,12 @@
-# PROMOTED to canon in wave 2 from PPA `r14-literal-union-in-component` (rule-triage).
+# PROMOTED to canon in wave 2 from the source app `r14-literal-union-in-component` (rule-triage).
 #
-# Generic, not PPA-specific: the house store layout already states it — report §8
+# Generic, not specific to the source app: the house store layout already states it — report §8
 # puts «string-literal union'ы вроде `type Tab = "tasks" | "habits"`, которым
 # запрещено жить в файлах компонентов» in the `ui/` tier of the four-level model.
-# The PPA original hard-coded `apps/ppa/components/**` and `apps/ppa/app/**`;
+# The source app original hard-coded `apps/<app>/components/**` and `apps/<app>/app/**`;
 # the globs below are the same intent stated for any repo.
 #
-# 23 hits across tg-gallery + observatory with the PPA globs stripped, so it is
+# 23 hits across two consumer apps with the source app globs stripped, so it is
 # a live rule elsewhere and not a local house style.
 id: literal-union-in-component
 language: typescript

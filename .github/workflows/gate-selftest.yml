@@ -19,5 +19,5 @@ jobs:
       guardrails_cmd: node dist/cli.js
       # The reusable gate defaults to self-hosted for the private repos that call
       # it. This repo is public, so its own self-test stays on GitHub's machines:
-      # a fork's pull request must not run code on our server (is-cf914d44).
+      # a fork's pull request must not run code on our server.
       runner_labels: '["ubuntu-latest"]'

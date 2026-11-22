@@ -48,7 +48,7 @@ utils:
         kind: identifier
         regex: '^runInAction$'
   # An observable MUTATION — which is the whole defect. Without this clause the
-  # rule fires on any async method, and in SiteCraft 10 of its 12 hits were
+  # rule fires on any async method, and in a site-builder repo 10 of its 12 hits were
   # private I/O helpers (`walkDir`, `collectAllFiles`, `uploadFile`) that await
   # a filesystem and never touch a field. Those have no action coverage to lose,
   # so at warning tier they were pure noise.

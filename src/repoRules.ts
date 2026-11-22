@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { packageRoot } from "./packagePaths.js";
 
-// Repo-local rules (is-f58cd6b4). `guardrails init` writes an `sgconfig.yml`
+// Repo-local rules. `guardrails init` writes an `sgconfig.yml`
 // into the consuming repo and the README tells people to add a second
 // `ruleDir` for rules that encode ONE repo's convention — but `verify` and
 // `verify-diff` only ever scanned with the PACKAGE's own sgconfig.yml, so

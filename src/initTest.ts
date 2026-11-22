@@ -8,7 +8,7 @@ import { packageRoot } from "./packagePaths.js";
 // Fixture tests for `guardrails init` stack detection. Three mini-repos:
 //   1. single-package app — the original root-only path still works
 //   2. pnpm monorepo, one signal app — signals aggregate from the workspace
-//      (the observatory case: root package.json is dependency-empty)
+//      (a consumer app's case: root package.json is dependency-empty)
 //   3. pnpm monorepo, two apps that DISAGREE — the aggregate takes the first
 //      app's value and per-app [stack.app] blocks are materialized
 

@@ -40,7 +40,7 @@ export class ApiClient {
 // ── the false-positive class this rule was narrowed to exclude ─────────
 // Private async helpers that do pure I/O and never touch an observable field.
 // There is no action coverage to lose, so there is nothing to convert. Real:
-// SiteCraft's walkDir / collectAllFiles / uploadFile — 10 of the rule's 12
+// A site-builder repo's walkDir / collectAllFiles / uploadFile — 10 of the rule's 12
 // hits in that repo before the mutation requirement was added.
 export class ContentStore {
   files: string[] = []

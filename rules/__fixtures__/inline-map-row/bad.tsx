@@ -52,7 +52,7 @@ export const E = observer(() => (
 ))
 
 // The real shape, with design-system tags rather than host elements:
-// observatory's SessionsTreeSection with its extracted <StatusGroup/> inlined.
+// A session-viewer app's SessionsTreeSection with its extracted <StatusGroup/> inlined.
 export const SessionsTreeSection = observer(() => {
   const { data, ui } = useStore()
   const byStatus = (s: SessionStatus) => data.sessions.filter((x) => x.status === s)

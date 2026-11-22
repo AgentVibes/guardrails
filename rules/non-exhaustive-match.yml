@@ -1,5 +1,5 @@
-# ── rule body adopted from faceless-photo-lib `ts-pattern-prefer-exhaustive` (wave 2 triage) ──
-# The two rules were duplicates; the faceless implementation is strictly better,
+# ── rule body adopted from a consumer repo's `ts-pattern-prefer-exhaustive` (wave 2 triage) ──
+# The two rules were duplicates; the consumer's implementation is strictly better,
 # so the canon id keeps its message and takes that body. Why it is better here:
 # the old `pattern: $X.otherwise($$$)` fired on ANY `.otherwise()` method, not just
 # a ts-pattern chain — a false-positive class. Anchoring to a `match()` chain

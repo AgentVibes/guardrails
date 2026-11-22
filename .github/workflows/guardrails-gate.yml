@@ -68,7 +68,7 @@ on:
           user already has the tools installed: there the restore downloads and
           unpacks the whole mise data directory over the live one before
           `mise install` reports "all tools are installed". Measured on
-          merkle-substrate 2026-10-02 (run 36983745781): an 8.1 GB cache, 6.5
+          a consumer repo on 2026-10-02: an 8.1 GB cache, 6.5
           minutes to download and 3.3 to extract, about 10 of the gate's 11
           minutes.
         required: false
@@ -136,13 +136,13 @@ jobs:
       # actions/checkout so one token covers N repos.
       #
       # THE DESTINATION IS REMOVED FIRST, and that is the whole point of the
-      # step's shape (is-8774fe0e). A self-hosted runner keeps its _work
+      # step's shape. A self-hosted runner keeps its _work
       # directory between jobs, and `actions/checkout` cleans only its own path
       # — which, when sibling_repos is set, is repos/<owner>/<repo-under-test>.
       # The siblings sit next to it and nothing removed them, so the second run
       # on any such runner died with "destination path ... already exists and
-      # is not an empty directory", exit 128. tg-gallery: run 34019944126 green
-      # (clean workspace), 34021048450 and 34021105600 red on the leftovers.
+      # is not an empty directory", exit 128. In one consumer the first run was green
+      # (clean workspace) and the next two were red on the leftovers.
       #
       # That failure is worse than an ordinary red build: it lands BEFORE
       # verify-diff, so the ratchet, the metrics ratchet and the install were
@@ -188,7 +188,7 @@ jobs:
       # Private-scoped dependencies. Without this the install 401s and every
       # gate step after it is SKIPPED — which reads as "the gate ran and found
       # nothing", the failure this whole toolkit exists to prevent. Measured on
-      # a consumer: merkle-substrate's gate had 54 runs with zero steps and one
+      # one consumer: its gate had 54 runs with zero steps and one
       # run that reached here and died at ERR_PNPM_FETCH_401, so the gate had
       # never verified a line since adoption.
       #

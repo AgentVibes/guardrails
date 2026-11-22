@@ -1,5 +1,5 @@
-# ── rule body adopted from faceless-photo-lib `no-instanceof-map-set` (wave 2 triage) ──
-# The two rules were duplicates; the faceless implementation is strictly better,
+# ── rule body adopted from a consumer repo's `no-instanceof-map-set` (wave 2 triage) ──
+# The two rules were duplicates; the consumer's implementation is strictly better,
 # so the canon id keeps its message and takes that body. Why it is better here:
 # the old patterns named only Map and Set; WeakMap and WeakSet have exactly the
 # same cross-realm failure and were invisible.

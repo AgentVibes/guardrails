@@ -7,13 +7,10 @@
 # out once in `catch-empty-tsx.yml`; the short version is that ast-grep has no
 # way to say "both languages", so a twin id per language is the only option.
 #
-# Measured 2026-09-06 across the five repos that consume guardrails
-# (SiteCraftMonorepo 40, faceless-photo-lib 28, agent-session-observatory 18,
-# tg-gallery 47, merkle-substrate 52): 185 `.otherwise()` chains in `.tsx` the
-# `.ts` arm never saw. Adding them was the owner's call — decision D4 in
-# doc-e4526f1a parks the question of banning `.otherwise()` outright, so the
-# owner was asked whether to surface the .tsx half before D4 lands and answered
-# «1» (add the twin now, severity warning) on 2026-09-06, is-8385d5dd.
+# Measured 2026-09-06 across five repos that consume guardrails: 185
+# `.otherwise()` chains in `.tsx` that the `.ts` arm never saw. The twin ships
+# at severity warning; whether to ban `.otherwise()` outright is a separate,
+# open question.
 #
 # Keep this file's `rule:` block IDENTICAL to `non-exhaustive-match.yml`.
 #

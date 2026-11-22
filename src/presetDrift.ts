@@ -8,11 +8,10 @@ import {
 } from "./overrideDeclarations.js";
 import { packageRoot } from "./packagePaths.js";
 
-// Preset-drift guard (is-9c7a78d7). The migration epic is-a70a5963 collapses 37
-// hand-rolled biome configs into one preset; nothing stopped a repo from
-// re-growing its own the week after. Owner's rule, 2026-09-03: «we should only
-// use agentvibes … no need to have many biome configs». So the tool is the
-// enforcement, not the convention.
+// Preset-drift guard. Consumers moved from 37 hand-rolled biome configs to
+// one preset, and nothing stopped a repo from re-growing its own the week
+// after. One preset everywhere is the rule, so the tool is the enforcement,
+// not the convention.
 //
 // Three ways a repo drifts:
 //   a. its `biome.json` does not extend `@agentvibes/guardrails/biome`,
@@ -27,7 +26,7 @@ import { packageRoot } from "./packagePaths.js";
 // `noEmptyBlockStatements` off for TEST paths (see OVERRIDABLE).
 //
 // Drift GATES in every repo: `verify` exits 2 and `doctor` exits 1, as the
-// acceptance of is-9c7a78d7 requires. Up to 0.2.4 it gated only where a repo
+// design requires. Up to 0.2.4 it gated only where a repo
 // had opted in with `[biome] preset = "enforced"`; that line is now inert, and
 // a repo that has not migrated goes red the day it upgrades guardrails.
 //
@@ -69,9 +68,9 @@ const OVERRIDE_SCOPING = new Set(["includes", "files", "ignore"]);
  *
  * `noEmptyBlockStatements` — error-tier in the preset, and it fires on
  * `mockImplementation(() => {})` and friends. Measured while migrating
- * (epic is-a70a5963): 110 occurrences in byoklab/agent-workbench, almost all in
+ * consumers to the preset: 110 occurrences in one app, almost all in
  * `__tests__/`, and 16 in @agentvibes/kit. Writing a suppression comment on
- * every one of them is noise, not review. Owner's call, 2026-09-07: a per-repo
+ * every one of them is noise, not review. The answer: a per-repo
  * override, scoped to tests. It stays error-tier in real source, which is where
  * an empty `catch` actually hides something.
  */
@@ -112,7 +111,7 @@ interface BiomeConfig {
 // Only node_modules: a dependency's own biome.json is not this repo's config.
 // Every other directory is walked, build output and dot-directories included —
 // a config under dist/, .claude/ or .next/ is still a second config, and the
-// acceptance criterion names node_modules as the one exception (is-9c7a78d7).
+// acceptance criterion names node_modules as the one exception.
 // Consequence: an agent worktree kept inside the repo (`.claude/worktrees/<n>/`)
 // carries its own biome.json and is reported locally; CI checkouts have none.
 const SKIP_DIRS = new Set(["node_modules"]);
@@ -354,5 +353,5 @@ function linterIsDeclared(linter: unknown, declarations: readonly OverrideDeclar
 /** The one-line message the gate prints; "" when there is no drift. */
 export function driftMessage(findings: DriftFinding[]): string {
   if (findings.length === 0) return "";
-  return `biome preset drift: ${findings.map((f) => f.detail).join("; ")}. One preset everywhere — extend ${PRESET_SPECIFIER} and delete the local copy (epic is-a70a5963).`;
+  return `biome preset drift: ${findings.map((f) => f.detail).join("; ")}. One preset everywhere — extend ${PRESET_SPECIFIER} and delete the local copy.`;
 }

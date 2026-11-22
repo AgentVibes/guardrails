@@ -32,7 +32,7 @@ export class GitStore {
 
 // The generic-argument spelling of the annotation. A `pattern:
 // makeAutoObservable($$$)` does not match a call carrying explicit type
-// arguments, which is how SiteCraft's project.store.ts — 7 real call sites —
+// arguments, which is how a site-builder repo's project.store.ts — 7 real call sites —
 // went missing from the first version of this rule.
 export class ProjectStore {
   private _buildTimer: number | null = null

@@ -12,11 +12,10 @@ import { readTomlTable } from "./tomlTable.js";
 // the class imported — so the rule fires on the form the canon prescribes. Its
 // own header predicted this and named the fix: the boundary needs the repo to
 // say where its screens are, because an ast-grep `files:` glob is per-rule-file
-// and cannot read a manifest (is-7067a0b8).
+// and cannot read a manifest.
 //
 // Measured before choosing this shape rather than after: the canon's own screen
-// marker `**/*.screen.tsx` matches ZERO files across observatory, tg-gallery and
-// merkle-substrate, while `screens/` directories exist in two of the three. So
+// marker `**/*.screen.tsx` matches ZERO files across three consumer repos, while `screens/` directories exist in two of the three. So
 // no naming convention in the park can carry this, and a rule-side `ignores:`
 // glob would have been a guess about layout dressed as a fix.
 //
@@ -34,7 +33,7 @@ import { readTomlTable } from "./tomlTable.js";
 // Absent key = absent behaviour. A repo that says nothing is scanned exactly as
 // it was before this existed.
 //
-// GENERALISED (is-086a90ac). A second fact needed saying and the shape already
+// GENERALISED. A second fact needed saying and the shape already
 // fitted: `no-local-kit-clone` is error-tier and fires on the six declarations
 // inside `@agentvibes/kit` itself — the canonical definitions the rule tells
 // everyone else to import. Its own header names the fix ("if this IS the

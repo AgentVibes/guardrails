@@ -23,7 +23,7 @@ export const E = observer(() => <ul>{xs.map((x) => <li key={x.id}><a href={x.hre
 // Mapping to non-JSX values is untouched.
 export const F = observer(() => <ul>{xs.map((x) => x.title).join(", ")}</ul>)
 
-// A literal array — CLAUDE.md's "pure data" carve-out. A skeleton drawing four
+// A literal array — the house "pure data" carve-out. A skeleton drawing four
 // placeholder cards has no observable to subscribe to and no row to extract.
 export const G = observer(() => (
   <div>

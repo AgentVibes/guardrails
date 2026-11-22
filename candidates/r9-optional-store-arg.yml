@@ -8,9 +8,9 @@ message: |
   split into N narrow methods.
   Boundary cases (wrapping isomorphic-git, etc.) are exempt via the
   ignores list below.
-  See <vault>/_agent/Notes/2026-05-03-code-quality-rules.md R9.
+  Origin: rule R9 of the 2026-05-03 code-quality audit.
 files:
-  - "apps/ppa-libs/store/src/**/*.ts"
+  - "apps/app-libs/store/src/**/*.ts"
   - "packages/gitapp-store/src/**/*.ts"
 ignores:
   - "**/__tests__/**"

@@ -1,7 +1,7 @@
 // Every match chain here MUST be reported by `ts-pattern-dangling-match`.
 import { match } from "ts-pattern"
 
-// A real observatory chain with its terminator deleted: evaluates to a builder
+// A real chain from a consumer app with its terminator deleted: evaluates to a builder
 // object, which is truthy, so the caller keeps compiling and every arm is dead.
 export function label(r: Resource<string>): string {
   return match(r)

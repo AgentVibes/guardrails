@@ -61,7 +61,7 @@ function discoverConfigs(cwd: string): Record<string, string> {
   const sg = join(cwd, "sgconfig.yml");
   if (existsSync(sg)) {
     // Name the ruleDirs, not just the file. `verify` scans with this config IN
-    // ADDITION to the canon (is-f58cd6b4), so what it lists is what the repo
+    // ADDITION to the canon, so what it lists is what the repo
     // adds on top — and a repo that thinks it has local rules can see here
     // whether the config actually declares the directory holding them.
     const dirs = declaredRuleDirs(sg);
@@ -129,7 +129,7 @@ export function runDoctor(json: boolean, root: string = process.cwd()): number {
     },
     rulesetSha: rulesetSha(),
     configDiscovery: discoverConfigs(root),
-    // Preset drift (is-9c7a78d7): reported and gated in every repo, the same
+    // Preset drift: reported and gated in every repo, the same
     // rule `verify` applies.
     presetDrift: { findings: presetDrift(root) },
     overrides,

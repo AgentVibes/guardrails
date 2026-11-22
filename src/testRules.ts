@@ -196,7 +196,7 @@ const EXPECTATIONS: Expectation[] = [
     goodSuffix: "hardcoded-url-in-component/components/good.ts",
   },
   // Five canon rules whose bodies were replaced by the (strictly better)
-  // faceless implementations. These fixtures exist to pin the coverage the
+  // consumer implementations. These fixtures exist to pin the coverage the
   // upgrade ADDED — every bad.ts here carries the edge cases the old body
   // missed, so a revert cannot pass silently.
   {
@@ -271,7 +271,7 @@ const EXPECTATIONS: Expectation[] = [
     hits: 3,
     goodSuffix: "screen-file-styling/good.screen.tsx",
   },
-  // ── wave 3: closing the .tsx language gap (is-fc8916f7) ───────────────
+  // ── wave 3: closing the .tsx language gap ───────────────
   // Five rules were `language: typescript` with no `-tsx` twin, so every
   // React component file was invisible to them. Each now has both arms, and
   // both arms are asserted here — an unexecuted twin is the unexecuted rule
@@ -330,7 +330,7 @@ const EXPECTATIONS: Expectation[] = [
     hits: 8,
     goodSuffix: "silent-default-return/good.tsx",
   },
-  // ── the `as const` widening (is-9e66ec5a) ─────────────────────────────
+  // ── the `as const` widening ─────────────────────────────
   // `demo-mode-by-default` guards the rule in fake-data.md and had no fixture
   // at all — nothing executed it. Both arms are asserted now, and the bad
   // fixture carries the four forms: the annotated one the rule always caught,

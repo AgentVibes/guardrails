@@ -1,7 +1,7 @@
 import { type CallExpression, type Node, type Program, parseSync } from "oxc-parser";
 
 // The metrics walker's view of a source file: oxc-parser's ESTree (TS-ESTree
-// shape) plus a line index. Replaces `ts.createSourceFile` (is-d47ee312):
+// shape) plus a line index. Replaces `ts.createSourceFile`:
 // measured 4–5× faster on the same files, and the `typescript` package stops
 // being a runtime dependency.
 

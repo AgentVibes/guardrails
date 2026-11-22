@@ -7,7 +7,7 @@
 #
 # WARNING TIER ON PURPOSE. D8 ships the split as a recommendation first, with a
 # ratchet on the share of view files — not as a hard gate. Raising this to error
-# would decide a question the owner deliberately parked. The store half of the
+# would decide a question that is deliberately left open. The store half of the
 # same contract is the canon's `view-imports-store` (error), which is a narrower
 # claim: no store access anywhere in the app's view files.
 #

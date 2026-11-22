@@ -34,6 +34,6 @@ export function describeBranch(branch: string): string {
 }
 
 // Importing the symbol is not calling it. The report's "66 runInAction in
-// SiteCraft" counted 7 import lines exactly like this one; the real call-site
+// a site-builder repo" counted 7 import lines exactly like this one; the real call-site
 // count is 59.
 export { runInAction } from "mobx"

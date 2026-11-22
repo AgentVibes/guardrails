@@ -8,7 +8,7 @@
 # way to say "both languages", so a twin id per language is the only option.
 #
 # Measured 2026-09-06 across the same five repos: 41 findings in `.tsx`
-# (SiteCraft 1, faceless 7, observatory 9, tg-gallery 6, merkle-substrate 18).
+# (per repo: 1, 7, 9, 6, 18).
 # This twin restores intent rather than extending it: the `files:` globs below
 # already list `**/components/**/*.tsx` and `**/screens/**/*.tsx`, and under
 # `language: typescript` those three lines could never match anything. The rule

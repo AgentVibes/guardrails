@@ -8,7 +8,7 @@
 # way to say "both languages", so a twin id per language is the only option.
 #
 # Measured 2026-09-06 across the same five repos: 29 findings in `.tsx`
-# (SiteCraft 1, faceless 2, observatory 6, tg-gallery 2, merkle-substrate 18).
+# (per repo: 1, 2, 6, 2, 18).
 # `if (x.kind === …)` branching lives in components at least as often as in
 # plain modules, which is precisely where the union grows a variant unnoticed.
 #

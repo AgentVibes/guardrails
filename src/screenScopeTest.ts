@@ -7,7 +7,7 @@ import { packageRoot } from "./packagePaths.js";
 import { scopeExemptRuleIds } from "./screenScope.js";
 
 // `[verify] screens` — the repo says where its screens are; the canon says which
-// rules do not apply there (is-7067a0b8). Four directions, all executed:
+// rules do not apply there. Four directions, all executed:
 //   1. with no declaration, a screen still fires — absent key, absent behaviour
 //   2. with the declaration, the screen stops firing
 //   3. the LEAF COMPONENT still fires either way — the half that has to keep

@@ -2,7 +2,7 @@ import { lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 // `.claude` is agent workspace, not product source — and in the wild it holds
-// symlinked git worktrees of OTHER repos (observed in observatory), which is
+// symlinked git worktrees of OTHER repos (observed in a consumer app), which is
 // also why the walker lstats and never follows symlinks: a symlinked foreign
 // tree must not leak into this project's metrics or scans.
 const SKIP_DIRS = new Set([

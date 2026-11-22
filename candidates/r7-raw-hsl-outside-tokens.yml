@@ -3,12 +3,12 @@ language: tsx
 severity: warning
 message: |
   R7 — Raw hsl(...) string in a component. Use useTokens() and the
-  semantic tokens defined in apps/ppa/lib/tokens.ts. If the token
+  semantic tokens defined in apps/<app>/lib/tokens.ts. If the token
   you need doesn't exist, ADD it to tokens.ts/themed-tokens.ts first.
-  See <vault>/_agent/Notes/2026-05-03-code-quality-rules.md R7
+  Origin: rule R7 of the 2026-05-03 code-quality audit.
   and AGENTS.md (HSL/tokens rule).
 files:
-  - "apps/ppa/components/**/*.tsx"
+  - "apps/<app>/components/**/*.tsx"
 ignores:
   - "**/_fixture.ts"
   - "**/__tests__/**"

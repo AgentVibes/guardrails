@@ -8,10 +8,10 @@
 # THE NEGATIVE IS THE WHOLE DESIGN OF THIS RULE. The identical shape,
 # `return this.data.x`, is the house data-wrapper pattern and is completely
 # legal: a `Model` class holding a plain record and exposing its fields as
-# observable getters. Measured across SiteCraft, observatory, byok and metro,
+# observable getters. Measured across four consumer repos,
 # single-line `return this.X.y` getters break down as:
 #
-#     89 × this.data.*            byok Model, metro domain stores — LEGAL
+#     89 × this.data.*            a model class, domain stores — LEGAL
 #      2 × this.connectionStore.* — the real store→store alias
 #
 # So the discriminator is the intermediate NAME, and the rule matches only

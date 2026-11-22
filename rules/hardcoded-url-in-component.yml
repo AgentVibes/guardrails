@@ -1,15 +1,15 @@
-# PROMOTED to canon in wave 2 from PPA `r1a-hardcoded-url-in-component` (rule-triage).
+# PROMOTED to canon in wave 2 from the source app `r1a-hardcoded-url-in-component` (rule-triage).
 #
 # Promoted because it enforces a rule that is already house-wide rather than
-# PPA-local: CLAUDE.md's "No localhost" section — every service URL comes from
+# Source-app-local: the "No localhost" convention — every service URL comes from
 # the dev CLI, never a literal, and the legacy proxy zone is retired for new
 # code. A URL baked into a component is also the thing that
 # makes a component un-reusable and un-testable, which is the same boundary
 # `ui-imports-app-store` guards from the other side.
 #
-# Only 2 hits across tg-gallery + observatory — a clean ratchet on new code
-# rather than a cleanup campaign. The PPA original pointed at
-# `apps/ppa/lib/constants/urls.ts`; the message below states the destination
+# Only 2 hits across two consumer apps — a clean ratchet on new code
+# rather than a cleanup campaign. The source app original pointed at
+# `apps/<app>/lib/constants/urls.ts`; the message below states the destination
 # generically.
 id: hardcoded-url-in-component
 language: tsx

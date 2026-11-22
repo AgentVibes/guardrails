@@ -143,7 +143,7 @@ the relative escapes resolve. **Each sibling path is removed and re-cloned on
 every run.** A self-hosted runner keeps its `_work` directory between jobs and
 `actions/checkout` cleans only its own path, so the leftovers used to make the
 step exit 128 on every run after the first — before install, so the ratchet
-showed as `skipped` rather than as not-run (is-8774fe0e). Re-cloning also keeps
+showed as `skipped` rather than as not-run. Re-cloning also keeps
 the sibling current: gating against last week's sibling is a wrong answer, not
 a cheap one. Listing the repo under test in `sibling_repos` is refused — that
 path holds the run's own checkout. Private siblings additionally need
@@ -266,7 +266,7 @@ than restyling: `$schema`, `files` (a repo decides which of ITS paths are
 linted), a language block such as `css.parser.tailwindDirectives`, and an
 `overrides` entry that only turns `suspicious.noConsole` off for some paths (a
 CLI has to print) or `suspicious.noEmptyBlockStatements` off for TEST paths.
-The owner ruled on 2026-10-05 (epic is-a70a5963) that a key is allowed exactly
+A key is allowed exactly
 when this check allows it, so this list and the code are one rulebook.
 
 **Drift gates everywhere.** `verify` exits 2 and `doctor` exits 1, with the
@@ -489,7 +489,7 @@ sqlite3 ~/.local/state/agentvibes/guardrails.sqlite \
 - `structure/` — the `component-decl` marker rule the CLI turns into
   `react-multi-component` / `react-component-too-long` /
   `react-component-needs-folder` findings.
-- `candidates/` — triaged in wave 2. Three PPA R-rules were promoted into
+- `candidates/` — triaged in wave 2. Three source-app R-rules were promoted into
   `rules/`; the eight that remain are repo-local by decision, with the reason
   for each recorded in `candidates/README.md`. Still loaded nowhere.
 

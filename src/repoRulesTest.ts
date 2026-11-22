@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { packageRoot } from "./packagePaths.js";
 
-// Regression fixtures for is-f58cd6b4 — `verify` ignored the consuming repo's
+// Regression fixtures: `verify` ignored the consuming repo's
 // own sgconfig.yml, so repo-local rules never ran and the finding count was of
 // a smaller rule set than the repo had asked for, with nothing saying so.
 //

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { addedLinesByFile, changedFiles } from "./gitDiff.js";
 import { packageRoot } from "./packagePaths.js";
 
-// is-97095d35: verify-diff treated a renamed file as if every line were new,
+// A regression: verify-diff treated a renamed file as if every line were new,
 // because each changed path was diffed ALONE — with only the new path in the
 // pathspec git cannot pair the rename. The added-lines computation now runs one
 // rename-aware `git diff -U0 -M` and reads per-file hunks.

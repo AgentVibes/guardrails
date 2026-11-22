@@ -15,7 +15,7 @@ export class ObservableQuery<T> {
   constructor(private readonly fetcher: () => Promise<T>) {}
 }
 
-// gramforge carries six byte-identical copies of these two inside one monorepo.
+// One consumer carries six byte-identical copies of these two inside one monorepo.
 export function warnDegraded(context: string, detail: string): void {
   console.warn(`[degraded] ${context}: ${detail}`)
 }

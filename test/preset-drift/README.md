@@ -1,4 +1,4 @@
-# Preset-drift fixtures (is-9c7a78d7)
+# Preset-drift fixtures
 
 Each `*.json` here is a small repository tree: keys are paths, values are the
 JSON written at that path. `src/presetDriftTest.ts` materialises every fixture

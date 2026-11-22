@@ -6,7 +6,7 @@
 // The annotated form, which the rule caught from the start.
 export const DEFAULT_MODE: Mode = { kind: "demo" }
 
-// The `as const` form (is-9e66ec5a). This is the spelling people reach for
+// The `as const` form. This is the spelling people reach for
 // when the object carries no type annotation to hold the literal type, and it
 // was silently missed — DataSpool's retired local `no-fake-defaults` caught it,
 // so adopting the canon had been a coverage regression.

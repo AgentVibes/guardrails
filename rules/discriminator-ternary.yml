@@ -1,8 +1,8 @@
-# PROMOTED to canon in wave 2 from PPA `r4-ternary-on-discriminator` (rule-triage).
+# PROMOTED to canon in wave 2 from the source app `r4-ternary-on-discriminator` (rule-triage).
 #
-# The only one of the 11 PPA R-rules that was actually firing (18 hits in the
+# The only one of the 11 source-app R-rules that was actually firing (18 hits in the
 # audit), and the triage question was whether it duplicates something canon
-# already has. Measured on tg-gallery + observatory, it does not — the three
+# already has. Measured on two consumer apps, it does not — the three
 # rules partition the space cleanly:
 #
 #   kind-if-without-match   27 hits   `if` on a discriminator

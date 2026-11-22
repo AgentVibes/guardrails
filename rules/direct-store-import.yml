@@ -31,8 +31,7 @@ id: direct-store-import
 # GalleryPageStore(rootStore, slug))` is report §8's prescribed shape — so this
 # rule does not apply to files the repo declares as screens via
 # `[verify] screens` in .agentvibes/project.toml. Without that declaration
-# nothing changes and screens keep needing a justified suppression
-# (is-7067a0b8).
+# nothing changes and screens keep needing a justified suppression.
 metadata:
   appliesTo: not-screens
 language: tsx
@@ -43,12 +42,12 @@ ignores:
   # A test constructing a store directly is the PRESCRIBED shape, not a breach:
   # report §8 puts `new GalleryPageStore(fakeRoot, "slug")` with no render at
   # the centre of why the store is "отдельный легко тестируемый". Without this,
-  # 15 of observatory's 21 hits were tests doing exactly the right thing.
+  # 15 of a session-viewer app's 21 hits were tests doing exactly the right thing.
   - '**/*.test.tsx'
   - '**/*.spec.tsx'
   - '**/__tests__/**'
   # The composition root wires dependencies once before the first render —
-  # `initRootStore(deps)` in report §8. Observatory's `main.tsx` picks its data
+  # `initRootStore(deps)` in report §8. A session-viewer app's `main.tsx` picks its data
   # source here, which is also where fake-data.md REQUIRES the choice to be made.
   - '**/main.tsx'
   # A gallery, storybook or preview harness legitimately builds stores over
@@ -108,7 +107,7 @@ rule:
           # X7 again, one level down: `import { NOTIFICATION_KINDS, type
           # NotificationSettingsStore }` is a value import, so the whole-statement
           # type check above does not exclude it — but the store name in it is
-          # still just a type. Observatory's NotificationsSettingsView.tsx was
+          # still just a type. A session-viewer app's NotificationsSettingsView.tsx was
           # flagged for exactly this before the clause existed.
           - not:
               inside:
