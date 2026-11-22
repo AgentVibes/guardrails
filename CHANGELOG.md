@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `doctor` reports wiring: seven checks (installed, sgconfig lists the canon
+  rule dir, lint script runs guardrails, CI runs it, the post-edit and stop
+  hooks are registered, no preset drift), each with its evidence, and a state
+  `off` / `partial` / `on`. `on` needs every check AND zero overrides.
+  `detectWiring(root)` is exported as `@agentvibes/guardrails/wiring`. The
+  exit code is unchanged. The text output lists at most 20 override findings;
+  `--json` lists all.
 - Overrides inventory: `verify` and `doctor` list every deviation from the
   canon (inline `ast-grep-ignore` / `biome-ignore`, `[verify]` scopes,
   biome rule overrides, repo rules reusing a canon id, a raised

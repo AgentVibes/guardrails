@@ -8,6 +8,7 @@ import { packageRoot, rulesDir, structureRulesDir } from "./packagePaths.js";
 import { driftMessage, presetDrift } from "./presetDrift.js";
 import { declaredRuleDirs } from "./repoRules.js";
 import { pinnedVersion, tryResolveTool } from "./toolResolve.js";
+import { detectWiring, type WiringReport } from "./wiring.js";
 
 interface ToolReport {
   found: boolean;
@@ -104,10 +105,19 @@ function readOverrides(root: string): OverridesRead {
   }
 }
 
-export function runDoctor(json: boolean): number {
+export function runDoctor(json: boolean, root: string = process.cwd()): number {
   const version = (
     JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { version: string }
   ).version;
+  const overrides = readOverrides(root);
+  // Wiring (wiring.ts) is a report: it never changes doctor's exit code.
+  const wiring = detectWiring(
+    root,
+    match(overrides)
+      .with({ status: "read" }, (r) => r)
+      .with({ status: "unreadable" }, () => undefined)
+      .exhaustive(),
+  );
   const result = {
     command: "doctor",
     package: { name: "@agentvibes/guardrails", version, root: packageRoot },
@@ -118,11 +128,12 @@ export function runDoctor(json: boolean): number {
       mise: tryResolveTool("mise") !== undefined,
     },
     rulesetSha: rulesetSha(),
-    configDiscovery: discoverConfigs(process.cwd()),
+    configDiscovery: discoverConfigs(root),
     // Preset drift (is-9c7a78d7): reported and gated in every repo, the same
     // rule `verify` applies.
-    presetDrift: { findings: presetDrift(process.cwd()) },
-    overrides: readOverrides(process.cwd()),
+    presetDrift: { findings: presetDrift(root) },
+    overrides,
+    wiring,
   };
 
   if (json) {
@@ -140,7 +151,7 @@ export function runDoctor(json: boolean): number {
     }
     console.log(`mise       ${result.tools.mise ? "present" : "absent"}`);
     console.log(`ruleset    sha256:${result.rulesetSha.slice(0, 16)}…`);
-    console.log(`config discovery in ${process.cwd()}:`);
+    console.log(`config discovery in ${root}:`);
     for (const [k, v] of Object.entries(result.configDiscovery)) {
       console.log(`  ${k.padEnd(28)} ${v}`);
     }
@@ -151,6 +162,7 @@ export function runDoctor(json: boolean): number {
       for (const f of result.presetDrift.findings) console.log(`  ${f.detail}`);
     }
     printOverrides(result.overrides);
+    printWiring(result.wiring);
   }
   const allFound = result.tools["ast-grep"].found && result.tools.biome.found;
   const drifted = result.presetDrift.findings.length > 0;
@@ -165,7 +177,25 @@ function printOverrides(read: OverridesRead): void {
     .with({ status: "read" }, (r) => {
       const missing = r.overrides.filter((o) => o.reason.status === "missing");
       console.log(`overrides     ${r.overrides.length}, ${missing.length} without a reason`);
-      for (const f of r.findings) console.log(`  ${f.rule}: ${f.message}`);
+      const SHOWN = 20;
+      for (const f of r.findings.slice(0, SHOWN)) console.log(`  ${f.rule}: ${f.message}`);
+      if (r.findings.length > SHOWN) {
+        console.log(
+          `  … ${r.findings.length - SHOWN} more: guardrails doctor --json lists every one`,
+        );
+      }
     })
+    .exhaustive();
+}
+
+function printWiring(w: WiringReport): void {
+  console.log(`wiring        ${w.state.toUpperCase()}`);
+  for (const c of w.checks)
+    console.log(`  ${c.status === "pass" ? "ok  " : "MISS"} ${c.id.padEnd(14)} ${c.detail}`);
+  match(w.overrides)
+    .with({ status: "counted" }, (o) => {
+      if (o.total > 0) console.log(`  (${o.total} override(s) of the canon keep it from ON)`);
+    })
+    .with({ status: "unreadable" }, (o) => console.log(`  overrides unreadable: ${o.error}`))
     .exhaustive();
 }
