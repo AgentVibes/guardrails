@@ -79,7 +79,10 @@ field), while the metric also counts lone boolean progress-flag declarations
 No production file may hold more than **500 SLOC** (lines minus imports,
 blank lines and comment-only lines — the `file_sloc` that `metrics` reports).
 Test files, stories, showcases and `.d.ts` files are excluded, as for every
-metric. Files that were already longer when a repo adopted the ratchet are
+metric. So is every file in a test directory (`tests/`, `test/`, `e2e/`,
+`spec/`, `__tests__/`, `__e2e__/`, `__mocks__/`), such as a shared harness or an
+end-to-end script; the recorded `files_over_sloc_limit` counts the same files.
+Files that were already longer when a repo adopted the ratchet are
 listed in a committed baseline, `.guardrails/file-sloc.json`, each with its own
 ceiling:
 

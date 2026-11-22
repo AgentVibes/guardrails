@@ -10,6 +10,7 @@ import {
   type FileSlocUpdate,
   type FileSlocViolation,
   fileSlocBaselinePath,
+  lengthGated,
   maxFileSloc,
   readFileSlocBaseline,
   updateFileSloc,
@@ -88,7 +89,11 @@ function printReport(metrics: ProjectMetrics): void {
 }
 
 function measuredSloc(cwd: string, metrics: ProjectMetrics): Map<string, number> {
-  return new Map(metrics.files.map((f) => [baselineKey(cwd, f.file), f.fileSloc]));
+  return new Map(
+    metrics.files
+      .map((f) => [baselineKey(cwd, f.file), f.fileSloc] as const)
+      .filter(([key]) => lengthGated(key)),
+  );
 }
 
 /** --update-baseline's half for the per-file length ratchet (.guardrails/file-sloc.json). */

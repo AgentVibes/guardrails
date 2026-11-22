@@ -7,6 +7,7 @@ import {
   readOverrideDeclarations,
 } from "./overrideDeclarations.js";
 import { packageRoot } from "./packagePaths.js";
+import { TEST_PATH_GLOB } from "./testPaths.js";
 
 // Preset-drift guard. Consumers moved from 37 hand-rolled biome configs to
 // one preset, and nothing stopped a repo from re-growing its own the week
@@ -76,10 +77,6 @@ const OVERRIDE_SCOPING = new Set(["includes", "files", "ignore"]);
  */
 const OVERRIDABLE = new Set(["noConsole", "noEmptyBlockStatements"]);
 
-/** A path glob that names test code — the only scope the empty-block carve-out may take. */
-const TEST_PATH =
-  /(^|\/|\*)(__tests__|__e2e__|__mocks__|tests?|e2e|spec)(\/|$)|\.(test|spec)\.[jt]sx?$|\.(test|spec)\.\*|\*\.(test|spec)\b/;
-
 /**
  * True when EVERY positive glob in the entry's `includes` names test code. An
  * entry with no `includes`, or with one non-test glob among them, is not
@@ -93,7 +90,7 @@ function includesOf(entry: Record<string, unknown>): string[] {
 
 function testScoped(entry: Record<string, unknown>): boolean {
   const positive = includesOf(entry).filter((g) => !g.startsWith("!"));
-  return positive.length > 0 && positive.every((g) => TEST_PATH.test(g));
+  return positive.length > 0 && positive.every((g) => TEST_PATH_GLOB.test(g));
 }
 
 export interface DriftFinding {

@@ -59,6 +59,19 @@ function unitChecks(): void {
     JSON.stringify(grown),
   );
 
+  const legacy = updateFileSloc(
+    { version: 1, threshold: 500, files: { "big.ts": 600, "tests/harness.ts": 700 } },
+    new Map([["big.ts", 600]]),
+    500,
+    false,
+    () => true,
+  );
+  expect(
+    "an update drops a listed file that sits in a test directory",
+    same(legacy.next.files, { "big.ts": 600 }) && legacy.dropped.includes("tests/harness.ts"),
+    JSON.stringify(legacy),
+  );
+
   const shrunk = updateFileSloc(created.next, new Map([["big.ts", 550]]), 500, false, () => true);
   expect("a shrink tightens the ceiling", same(shrunk.next.files, { "big.ts": 550 }));
 
@@ -190,6 +203,21 @@ function cliChecks(dir: string): void {
   writeFileSync(join(dir, "big.test.ts"), body(900, "t"));
   gate(dir, "a test file over the limit", { check: 0, diff: 0 });
   git(dir, "checkout", "-q", "--", ".");
+
+  // Test directories are test code too: a shared harness, an e2e script.
+  for (const sub of ["tests", "e2e", "packages/ui/test", "src/__mocks__"]) {
+    mkdirSync(join(dir, sub), { recursive: true });
+    writeFileSync(join(dir, sub, "harness.ts"), body(700, "h"));
+    gate(dir, `a file under ${sub}/ over the limit`, { check: 0, diff: 0 });
+    rmSync(join(dir, sub.split("/")[0] ?? sub), { recursive: true, force: true });
+  }
+  mkdirSync(join(dir, "src"), { recursive: true });
+  writeFileSync(join(dir, "src", "contest.ts"), body(700, "c"));
+  gate(dir, "a production file whose name only contains 'test' still fails", {
+    check: 1,
+    diff: 1,
+  });
+  rmSync(join(dir, "src"), { recursive: true, force: true });
 
   writeFileSync(baselineFile, `${JSON.stringify({ version: 1, threshold: 500, files: {} })}\n`);
   gate(dir, "big.ts unlisted but untouched by the diff", { check: 1, diff: 0 });

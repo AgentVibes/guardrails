@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
-import { maxFileSloc } from "../fileSlocBaseline.js";
+import { baselineKey, lengthGated, maxFileSloc } from "../fileSlocBaseline.js";
 import { collectFiles } from "../fileWalk.js";
 import type { ProjectMetrics } from "../metricsTypes.js";
 
@@ -100,7 +100,10 @@ export function slocMetrics(m: ProjectMetrics, root: string): Record<string, num
   const sloc = m.files.reduce((sum, f) => sum + f.fileSloc, 0);
   const out: Record<string, number> = {
     sloc,
-    files_over_sloc_limit: m.files.filter((f) => f.fileSloc > limit).length,
+    // The same files the length ratchet gates, so the two counts agree.
+    files_over_sloc_limit: m.files.filter(
+      (f) => f.fileSloc > limit && lengthGated(baselineKey(root, f.file)),
+    ).length,
   };
   if (m.files.length > 0) out.avg_file_sloc = Math.round((sloc / m.files.length) * 10) / 10;
   return out;
