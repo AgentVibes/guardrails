@@ -37,7 +37,8 @@ export function scan(
   if (cmd === undefined) throw new Error("empty ast-grep argv");
   const res = spawnSync(
     cmd,
-    [...prefix, "scan", "-c", configPath, ...extraArgs, "--json", ...targets],
+    // `--` ends option parsing, so a target can never be read as a flag.
+    [...prefix, "scan", "-c", configPath, ...extraArgs, "--json", "--", ...targets],
     {
       encoding: "utf8",
       maxBuffer: 256 * 1024 * 1024,
@@ -63,7 +64,7 @@ export function scan(
     parsed = JSON.parse(out) as AstGrepMatch[];
   } catch {
     throw new Error(
-      `ast-grep produced unparsable JSON (exit ${res.status}). stderr:\n${res.stderr.slice(0, 2000)}`,
+      `ast-grep produced unparsable JSON (exit ${res.status}). stdout starts:\n${out.slice(0, 500)}\nstderr:\n${res.stderr.slice(0, 2000)}`,
     );
   }
   return parsed.map((m) => ({
