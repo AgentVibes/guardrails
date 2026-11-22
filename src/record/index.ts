@@ -2,6 +2,8 @@
 // recording database — where it is, which schema version it speaks, and the
 // row shape of each latest table. README "Recording" is the prose contract.
 
+export { type FindingTool, toolOf } from "../findings.js";
+export { LANGUAGE_IDS, type LanguageId } from "../lang/languages.js";
 export {
   configuredDb,
   defaultDbPath,
@@ -14,6 +16,7 @@ export { parseRemote, repoIdentity } from "./repoKey.js";
 export { LANGUAGES } from "./repoMetrics.js";
 export type {
   FindingsData,
+  LanguageFindings,
   Part,
   RepoIdentity,
   RunRecord,
@@ -45,6 +48,14 @@ export interface ProjectLatestRow {
   wiring_hook_postedit: Flag;
   wiring_hook_stop: Flag;
   wiring_preset: Flag;
+  wiring_rust_clippy_strict: Flag;
+  wiring_rust_lints_inherited: Flag;
+  wiring_rust_toolchain: Flag;
+  wiring_rust_ci: Flag;
+  /** `typescript,rust`: the languages the last run checked (schema v2; NULL before). */
+  languages: string | null;
+  /** One `<language>: <reason>` line per language whose findings could not be measured; NULL when all were. */
+  findings_unavailable: string | null;
   errors: number | null;
   warnings: number | null;
   overrides: number | null;
@@ -74,6 +85,8 @@ export interface FindingLatestRow {
   file: string;
   line: number;
   message: string;
+  /** The tool that produced the finding (schema v2). */
+  tool: "ast-grep" | "guardrails" | "clippy" | "rustc" | "rustfmt";
 }
 
 export interface OverrideLatestRow {
@@ -85,7 +98,9 @@ export interface OverrideLatestRow {
     | "verify-scope"
     | "biome-rule"
     | "repo-rule-shadow"
-    | "metrics-limit";
+    | "metrics-limit"
+    | "rust-allow"
+    | "cargo-lint";
   rule: string;
   where: string;
   reason: string | null;

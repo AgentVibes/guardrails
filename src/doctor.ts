@@ -2,6 +2,18 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { match } from "ts-pattern";
+import {
+  hasLanguage,
+  type LanguageSet,
+  languagesOrDetected,
+  resolveLanguages,
+} from "./lang/languages.js";
+import {
+  RUST_TOOLS,
+  type RustToolName,
+  type RustToolReport,
+  rustToolReport,
+} from "./lang/rust/rustTools.js";
 import { OverrideConfigError } from "./overrideDeclarations.js";
 import { collectOverrides, type OverrideReport } from "./overrides.js";
 import { packageRoot, rulesDir, structureRulesDir } from "./packagePaths.js";
@@ -91,6 +103,17 @@ function discoverConfigs(cwd: string): Record<string, string> {
   return found;
 }
 
+type LanguagesRead = ({ status: "read" } & LanguageSet) | { status: "unreadable"; error: string };
+
+function readLanguages(root: string): LanguagesRead {
+  try {
+    return { status: "read", ...resolveLanguages(root) };
+  } catch (err) {
+    if (err instanceof OverrideConfigError) return { status: "unreadable", error: err.message };
+    throw err;
+  }
+}
+
 type OverridesRead =
   | ({ status: "read" } & OverrideReport)
   | { status: "unreadable"; error: string };
@@ -109,6 +132,12 @@ export function runDoctor(json: boolean, root: string = process.cwd()): number {
   const version = (
     JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { version: string }
   ).version;
+  const languages = readLanguages(root);
+  // A malformed [languages] table is reported and fails doctor; the rest of
+  // the report runs on what detection finds.
+  const enabled = languagesOrDetected(root);
+  const typescript = hasLanguage(enabled, "typescript");
+  const rust = hasLanguage(enabled, "rust");
   const overrides = readOverrides(root);
   // Wiring (wiring.ts) is a report: it never changes doctor's exit code.
   const wiring = detectWiring(
@@ -122,16 +151,25 @@ export function runDoctor(json: boolean, root: string = process.cwd()): number {
     command: "doctor",
     package: { name: "@agentvibes/guardrails", version, root: packageRoot },
     node: process.version,
+    languages,
     tools: {
       "ast-grep": reportTool("ast-grep"),
       biome: reportTool("biome"),
       mise: tryResolveTool("mise") !== undefined,
+      ...(rust
+        ? {
+            rust: Object.fromEntries(RUST_TOOLS.map((t) => [t, rustToolReport(root, t)])) as Record<
+              RustToolName,
+              RustToolReport
+            >,
+          }
+        : {}),
     },
     rulesetSha: rulesetSha(),
     configDiscovery: discoverConfigs(root),
     // Preset drift: reported and gated in every repo, the same
     // rule `verify` applies.
-    presetDrift: { findings: presetDrift(root) },
+    presetDrift: { findings: typescript ? presetDrift(root) : [] },
     overrides,
     wiring,
   };
@@ -150,6 +188,12 @@ export function runDoctor(json: boolean, root: string = process.cwd()): number {
       );
     }
     console.log(`mise       ${result.tools.mise ? "present" : "absent"}`);
+    for (const [name, t] of Object.entries(result.tools.rust ?? {})) {
+      console.log(
+        t.found ? `${name.padEnd(10)} ${t.version}` : `${name.padEnd(10)} MISSING — ${t.hint}`,
+      );
+    }
+    printLanguages(languages);
     console.log(`ruleset    sha256:${result.rulesetSha.slice(0, 16)}…`);
     console.log(`config discovery in ${root}:`);
     for (const [k, v] of Object.entries(result.configDiscovery)) {
@@ -164,11 +208,24 @@ export function runDoctor(json: boolean, root: string = process.cwd()): number {
     printOverrides(result.overrides);
     printWiring(result.wiring);
   }
-  const allFound = result.tools["ast-grep"].found && result.tools.biome.found;
+  // The tools a language needs are required only when that language is enabled.
+  const tsFound = !typescript || (result.tools["ast-grep"].found && result.tools.biome.found);
+  const rustFound = Object.values(result.tools.rust ?? {}).every((t) => t.found);
+  const allFound = tsFound && rustFound && languages.status === "read";
   const drifted = result.presetDrift.findings.length > 0;
   if (drifted && !json)
     console.error(`guardrails doctor: ${driftMessage(result.presetDrift.findings)}`);
   return allFound && !drifted ? 0 : 1;
+}
+
+function printLanguages(read: LanguagesRead): void {
+  match(read)
+    .with({ status: "unreadable" }, (r) => console.log(`languages     UNREADABLE — ${r.error}`))
+    .with({ status: "read" }, (r) => {
+      console.log(`languages     ${r.languages.join(", ")} (${r.source})`);
+      for (const e of r.evidence) console.log(`  ${e}`);
+    })
+    .exhaustive();
 }
 
 function printOverrides(read: OverridesRead): void {
@@ -191,7 +248,7 @@ function printOverrides(read: OverridesRead): void {
 function printWiring(w: WiringReport): void {
   console.log(`wiring        ${w.state.toUpperCase()}`);
   for (const c of w.checks)
-    console.log(`  ${c.status === "pass" ? "ok  " : "MISS"} ${c.id.padEnd(14)} ${c.detail}`);
+    console.log(`  ${c.status === "pass" ? "ok  " : "MISS"} ${c.id.padEnd(20)} ${c.detail}`);
   match(w.overrides)
     .with({ status: "counted" }, (o) => {
       if (o.total > 0) console.log(`  (${o.total} override(s) of the canon keep it from ON)`);

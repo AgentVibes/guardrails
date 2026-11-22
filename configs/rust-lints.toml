@@ -1,0 +1,27 @@
+# The @agentvibes/guardrails Clippy canon. `guardrails init` appends this table
+# to a Cargo workspace root (or, as `[lints.*]`, to a single crate), and
+# `guardrails doctor` (wiring check rust.clippy-strict) compares the repo's
+# table against it. README "Rust" gives the reason for every entry.
+#
+# A lint may be stricter in the repo (warn -> deny, deny -> forbid). A lint
+# set lower than here, or any lint set to "allow", is an override of the canon.
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# Whole groups at warn, under every single lint (priority -1), so a single
+# lint below can still be raised to deny. CI runs clippy with -D warnings,
+# so a warning fails the build all the same.
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# Restriction lints: these are off in Clippy by default.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+undocumented_unsafe_blocks = "deny"

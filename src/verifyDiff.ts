@@ -1,9 +1,10 @@
+import { realpathSync } from "node:fs";
 import { join, relative } from "node:path";
 import { match } from "ts-pattern";
 import { AstGrepConfigError, scanFindings } from "./astGrep.js";
 import { FileSlocConfigError } from "./fileSlocBaseline.js";
 import { fileSlocFindings, type SizeScope } from "./fileSlocGate.js";
-import { type Finding, formatFinding } from "./findings.js";
+import { type Finding, formatFinding, isRustFinding } from "./findings.js";
 import {
   addedLinesByFile,
   changedFiles,
@@ -12,10 +13,12 @@ import {
   resolveMergeBase,
 } from "./gitDiff.js";
 import { dropJsxSuppressed } from "./jsxSuppress.js";
+import { hasLanguage, type LanguageId, resolveLanguages } from "./lang/languages.js";
+import { rustDiffFindings } from "./lang/rust/rustFindings.js";
 import { OverrideConfigError } from "./overrideDeclarations.js";
 import { collectOverrides } from "./overrides.js";
 import { ruleFixtureFilter, rulesConfig } from "./packagePaths.js";
-import type { RunCollector } from "./record/record.js";
+import { type RunCollector, recordLanguageFindings } from "./record/record.js";
 import { dedupeFindings, ruleConfigs } from "./repoRules.js";
 import {
   dropScopeExempt,
@@ -48,7 +51,11 @@ import { detectWiring } from "./wiring.js";
 // untracked) is measured against .guardrails/file-sloc.json; on rungs 2 and 3
 // every file in scope is.
 
-type Rung =
+/** How a Rust finding is suppressed: an expectation with its reason, never a bare allow. */
+export const RUST_SUPPRESS_HINT =
+  'Rust: fix it, or put #[expect(<lint>, reason = "<why this is legitimate>")] on the item.';
+
+export type Rung =
   | { kind: "added-lines"; root: string; mergeBase: string }
   | { kind: "whole-file"; root: string }
   | { kind: "whole-tree" };
@@ -76,7 +83,7 @@ export function verifyExcludeRe(cwd: string): RegExp | undefined {
   return new RegExp(raw);
 }
 
-function resolveRung(cwd: string, base: string | undefined): Rung {
+export function resolveRung(cwd: string, base: string | undefined): Rung {
   const root = gitRoot(cwd);
   if (root === undefined) return { kind: "whole-tree" };
   const mb = resolveMergeBase(root, base);
@@ -135,12 +142,60 @@ export interface VerifyDiffResult {
   rungLabel: string;
   filesScanned: number;
   violations: Finding[];
+  languages: LanguageId[];
+  /** Checks that could not run (a Rust build that fails): never counted as zero. */
+  unavailable: { language: LanguageId; reason: string }[];
+  /** Findings per language that ran. */
+  counts: Partial<Record<LanguageId, number>>;
 }
 
-/** The verify-diff computation without reporting — shared by the CLI command and hook-stop. */
-export function runVerifyDiffCollect(cwd: string, base: string | undefined): VerifyDiffResult {
+/**
+ * The verify-diff computation without reporting — shared by the CLI command
+ * and hook-stop. Each enabled language contributes on the same rung.
+ * Throws OverrideConfigError on a malformed [languages] table.
+ */
+export function runVerifyDiffCollect(
+  cwd: string,
+  base: string | undefined,
+  mode: "verify" | "hook-stop" = "verify",
+): VerifyDiffResult {
+  const { languages } = resolveLanguages(cwd);
+  const rung = resolveRung(cwd, base);
+  const ts = hasLanguage(languages, "typescript")
+    ? typescriptDiff(cwd, rung)
+    : { rungLabel: planFor(rung).rungLabel, filesScanned: 0, violations: [] };
+  const result: VerifyDiffResult = {
+    ...ts,
+    languages,
+    unavailable: [],
+    counts: hasLanguage(languages, "typescript") ? { typescript: ts.violations.length } : {},
+  };
+  if (hasLanguage(languages, "rust")) {
+    let real = cwd;
+    try {
+      real = realpathSync(cwd);
+    } catch {
+      // ast-grep-ignore: catch-empty -- an unresolvable cwd keeps its spelling; git reports the same paths it was given
+      real = cwd;
+    }
+    const rust = rustDiffFindings(real, rung, verifyExcludeRe(cwd), mode);
+    result.violations = [...result.violations, ...rust.findings];
+    result.unavailable = rust.unavailable.map((reason) => ({ language: "rust" as const, reason }));
+    if (rust.unavailable.length === 0) result.counts.rust = rust.findings.length;
+    result.filesScanned =
+      result.filesScanned < 0 || rust.filesScanned < 0
+        ? -1
+        : result.filesScanned + rust.filesScanned;
+  }
+  return result;
+}
+
+function typescriptDiff(
+  cwd: string,
+  rung: Rung,
+): Pick<VerifyDiffResult, "rungLabel" | "filesScanned" | "violations"> {
   const severityArgs = severityRaiseArgs(cwd);
-  const plan = planFor(resolveRung(cwd, base));
+  const plan = planFor(rung);
   const exclude = verifyExcludeRe(cwd);
   if (exclude !== undefined && plan.files !== undefined) {
     // changedFiles yields absolute paths; the exclude regex (donor precedent:
@@ -191,9 +246,11 @@ export function runVerifyDiff(base: string | undefined, json: boolean, run: RunC
       scope: "diff",
       data: { tiers: "error-only", list: result.violations },
     };
+    recordLanguageFindings(run, "diff", result);
     if (run.recording) recordRepoState(run);
   } catch (err) {
     if (
+      err instanceof OverrideConfigError ||
       err instanceof SeverityConfigError ||
       err instanceof AstGrepConfigError ||
       err instanceof ScreenScopeError ||
@@ -205,9 +262,12 @@ export function runVerifyDiff(base: string | undefined, json: boolean, run: RunC
     }
     throw err;
   }
-  const { rungLabel, filesScanned, violations: gated } = result;
-  if (filesScanned === 0) {
-    report(json, rungLabel, 0, [], "no changed .ts/.tsx files — nothing to gate");
+  const { rungLabel, filesScanned, violations: gated, unavailable } = result;
+  for (const u of unavailable)
+    console.error(`guardrails verify-diff: ${u.language} UNAVAILABLE — ${u.reason}`);
+  if (filesScanned === 0 && unavailable.length === 0) {
+    const exts = result.languages.map((l) => (l === "rust" ? ".rs" : ".ts/.tsx")).join(" or ");
+    report(json, rungLabel, 0, [], `no changed ${exts} files — nothing to gate`, []);
     return 0;
   }
   report(
@@ -215,11 +275,15 @@ export function runVerifyDiff(base: string | undefined, json: boolean, run: RunC
     rungLabel,
     filesScanned,
     gated,
-    gated.length === 0
-      ? "OK — no new error-tier findings"
-      : `${gated.length} new ERROR-tier finding(s)`,
+    gated.length > 0
+      ? `${gated.length} new ERROR-tier finding(s)`
+      : unavailable.length > 0
+        ? `no new findings from what ran, but ${unavailable.length} check(s) could not run — not a pass`
+        : "OK — no new error-tier findings",
+    unavailable,
   );
-  return gated.length === 0 ? 0 : 1;
+  if (gated.length > 0) return 1;
+  return unavailable.length > 0 ? 2 : 0;
 }
 
 function report(
@@ -228,11 +292,19 @@ function report(
   files: number,
   gated: Finding[],
   summary: string,
+  unavailable: VerifyDiffResult["unavailable"],
 ): void {
   if (json) {
     console.log(
       JSON.stringify(
-        { command: "verify-diff", rung, filesScanned: files, violations: gated, summary },
+        {
+          command: "verify-diff",
+          rung,
+          filesScanned: files,
+          violations: gated,
+          summary,
+          ...(unavailable.length > 0 ? { unavailable } : {}),
+        },
         null,
         2,
       ),
@@ -242,11 +314,12 @@ function report(
   console.log(`guardrails verify-diff — ${rung}`);
   for (const f of gated) console.log(formatFinding(f));
   console.log(`guardrails verify-diff: ${summary}`);
-  if (gated.length > 0) {
+  if (gated.some((f) => !isRustFinding(f))) {
     console.log(
       "Fix these, or suppress a genuine false positive with a justified comment on the line above:\n  // ast-grep-ignore: <rule-id> -- <why this is legitimate>",
     );
   }
+  if (gated.some(isRustFinding)) console.log(RUST_SUPPRESS_HINT);
 }
 
 /**

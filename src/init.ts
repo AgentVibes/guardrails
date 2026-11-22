@@ -1,5 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { hasLanguage, languagesOrDetected } from "./lang/languages.js";
+import { type RustInitAction, rustInit } from "./lang/rust/rustInit.js";
 import { listWorkspacePackages } from "./workspaces.js";
 
 // `guardrails init` — repo stubs, config-over-inference (spec §5 layer B′.2):
@@ -154,6 +156,10 @@ const BIOME_STUB = `{
 
 export function runInit(json: boolean): number {
   const cwd = process.cwd();
+  const languages = languagesOrDetected(cwd);
+  const rust: RustInitAction[] = hasLanguage(languages, "rust") ? rustInit(cwd) : [];
+  // A Rust-only repo gets no TypeScript stubs; anything else gets them as before.
+  if (!hasLanguage(languages, "typescript")) return reportRustOnly(json, rust);
   const actions: Action[] = [];
   const detected = detectStack(cwd);
   const { stack, apps, conflicts, hadPackageJson } = detected;
@@ -190,7 +196,16 @@ export function runInit(json: boolean): number {
   if (json) {
     console.log(
       JSON.stringify(
-        { command: "init", detected: stack, apps, conflicts, hadPackageJson, actions },
+        {
+          command: "init",
+          languages,
+          detected: stack,
+          apps,
+          conflicts,
+          hadPackageJson,
+          actions,
+          ...(rust.length > 0 ? { rust } : {}),
+        },
         null,
         2,
       ),
@@ -212,6 +227,7 @@ export function runInit(json: boolean): number {
     );
   }
   for (const a of actions) console.log(`  ${a.action.padEnd(14)} ${a.file}`);
+  printRust(rust);
   const skippedStack = actions.some(
     (a) => a.file === ".agentvibes/project.toml" && a.action === "skipped-exists",
   );
@@ -225,5 +241,25 @@ export function runInit(json: boolean): number {
     );
     console.log("  nothing re-infers them silently.");
   }
+  return 0;
+}
+
+function printRust(rust: readonly RustInitAction[]): void {
+  if (rust.length === 0) return;
+  console.log("  rust:");
+  for (const a of rust)
+    console.log(
+      `  ${a.action.padEnd(18)} ${a.file}${a.detail === undefined ? "" : ` — ${a.detail}`}`,
+    );
+}
+
+function reportRustOnly(json: boolean, rust: readonly RustInitAction[]): number {
+  if (json) {
+    console.log(JSON.stringify({ command: "init", languages: ["rust"], rust }, null, 2));
+    return 0;
+  }
+  console.log("guardrails init — Rust (no TypeScript detected, so no sgconfig.yml or biome.json):");
+  printRust(rust);
+  console.log("  Run guardrails doctor to see what the existing files still lack.");
   return 0;
 }

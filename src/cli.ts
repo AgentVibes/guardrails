@@ -21,13 +21,18 @@ const USAGE = `guardrails — verification toolkit that makes agents write simpl
 
 Usage:
   guardrails verify [paths...]        scan with the bundled rule canon (+ text
-                                      greps + react structure); exit 1 on any
-                                      error-tier finding
+                                      greps + react structure); in a Rust repo
+                                      also cargo clippy + cargo fmt --check;
+                                      exit 1 on any error-tier finding
   guardrails verify-diff [--base R]   added-lines ratchet vs merge-base; exit 1
                                       only on error-tier findings your diff added
-  guardrails doctor                   tool versions, ruleset SHA, config discovery
+  guardrails doctor                   languages, tool versions, ruleset SHA,
+                                      config discovery, wiring checks
   guardrails init                     write repo stubs: sgconfig.yml, biome.json,
-                                      [stack] in .agentvibes/project.toml
+                                      [stack] in .agentvibes/project.toml; for
+                                      Rust the Clippy canon lint table,
+                                      rust-toolchain.toml, clippy.toml and the
+                                      Claude Code hooks
   guardrails metrics [paths...]       per-component/file/project metrics; with
                                       --check compares GATED metrics against the
                                       committed baseline (.guardrails/metrics.json)
@@ -56,8 +61,9 @@ Usage:
                                       the public CLI carries no topology
   guardrails hook-postedit            Claude Code PostToolUse hook: reads hook
                                       JSON on stdin, scans the edited .ts/.tsx
-                                      file on its changed lines; blocks on
-                                      error-tier findings
+                                      file (or runs clippy for the package of an
+                                      edited .rs file) on its changed lines;
+                                      blocks on error-tier findings
   guardrails hook-stop                Claude Code Stop hook: verify-diff over
                                       the session's changed files; blocks
                                       "done" over new error-tier findings
@@ -69,7 +75,11 @@ Usage:
 All subcommands accept --json.
 GUARDRAILS_RECORD=1 (or a database path) records verify, verify-diff, metrics,
 hook-stop and time runs into SQLite; see README "Recording".
-Exit codes: 0 ok · 1 findings/regression · 2 usage, missing tool, or missing baseline
+Languages: detected (package.json/tsconfig.json = typescript, Cargo.toml = rust)
+or set with [languages] enabled = ["rust"] in .agentvibes/project.toml.
+GUARDRAILS_CLIPPY_TIMEOUT_S limits each cargo run (hooks default 90s/300s).
+Exit codes: 0 ok · 1 findings/regression · 2 usage, missing tool, missing
+baseline, or a check that could not run (a Rust build that fails)
 `;
 
 /** Commands whose runs are recorded when GUARDRAILS_RECORD is on (README "Recording"). */

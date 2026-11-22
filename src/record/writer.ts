@@ -2,8 +2,9 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { match } from "ts-pattern";
-import type { Finding } from "../findings.js";
+import { type Finding, toolOf } from "../findings.js";
 import type { Override } from "../overrides.js";
+import { checkAdapter } from "../wiring.js";
 import type { FindingsData, Part, RunRecord } from "./runRecord.js";
 import {
   METRIC_COLUMNS,
@@ -204,6 +205,22 @@ function measuredData<T>(part: Part<T>): T | undefined {
     .exhaustive();
 }
 
+/** `typescript,rust`: the languages a run checked, comma-separated, in check order. */
+function languagesText(r: RunRecord): string | undefined {
+  return r.languages === undefined ? undefined : r.languages.join(",");
+}
+
+/** `rust: <reason>` for every language whose findings could not be measured; undefined when all were. */
+function unavailableText(r: RunRecord): string | undefined {
+  const lines = r.languageFindings.flatMap((l) =>
+    match(l.part)
+      .with({ status: "unavailable" }, (p) => [`${l.language}: ${p.reason}`])
+      .with({ status: "measured" }, { status: "skipped" }, () => [])
+      .exhaustive(),
+  );
+  return lines.length === 0 ? undefined : lines.join("\n");
+}
+
 const SEVERITY_ORDER = { error: 0, warning: 1, info: 2, hint: 3 } as const;
 
 function insertHistory(db: DatabaseSync, r: RunRecord, repoId: number): number {
@@ -214,8 +231,8 @@ function insertHistory(db: DatabaseSync, r: RunRecord, repoId: number): number {
     .prepare(
       `INSERT INTO runs (repo_id, at, command, root, sha, branch, duration_ms, exit_code,
          guardrails_version, node_version, ast_grep_version, biome_version,
-         wiring, errors, warnings, overrides, overrides_without_reason)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         wiring, errors, warnings, overrides, overrides_without_reason, languages)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       repoId,
@@ -235,36 +252,51 @@ function insertHistory(db: DatabaseSync, r: RunRecord, repoId: number): number {
       v(counts.warnings),
       v(ov.total),
       v(ov.withoutReason),
+      v(languagesText(r)),
     );
   const runId = Number(run.lastInsertRowid);
 
   const partRow = db.prepare(
-    "INSERT INTO run_parts (run_id, part, status, scope, reason) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO run_parts (run_id, part, status, scope, reason, language) VALUES (?, ?, ?, ?, ?, ?)",
   );
-  const parts: [string, Part<unknown>][] = [
-    ["findings", r.findings],
-    ["overrides", r.overrides],
-    ["wiring", r.wiring],
-    ["metrics", r.metrics],
+  // language NULL: the run as a whole. One more findings row per language checked.
+  const parts: [string, Part<unknown>, string | null][] = [
+    ["findings", r.findings, null],
+    ["overrides", r.overrides, null],
+    ["wiring", r.wiring, null],
+    ["metrics", r.metrics, null],
+    ...r.languageFindings.map((l): [string, Part<unknown>, string | null] => [
+      "findings",
+      l.part,
+      l.language,
+    ]),
   ];
-  for (const [name, part] of parts) {
+  for (const [name, part, language] of parts) {
     match(part)
-      .with({ status: "measured" }, (p) => partRow.run(runId, name, p.status, p.scope, null))
-      .with({ status: "unavailable" }, (p) => partRow.run(runId, name, p.status, null, p.reason))
-      .with({ status: "skipped" }, (p) => partRow.run(runId, name, p.status, null, null))
+      .with({ status: "measured" }, (p) =>
+        partRow.run(runId, name, p.status, p.scope, null, language),
+      )
+      .with({ status: "unavailable" }, (p) =>
+        partRow.run(runId, name, p.status, null, p.reason, language),
+      )
+      .with({ status: "skipped" }, (p) => partRow.run(runId, name, p.status, null, null, language))
       .exhaustive();
   }
 
   if (wiring !== undefined) {
     const row = db.prepare(
-      "INSERT INTO run_wiring (run_id, check_id, pass, detail) VALUES (?, ?, ?, ?)",
+      "INSERT INTO run_wiring (run_id, check_id, pass, detail, adapter) VALUES (?, ?, ?, ?, ?)",
     );
-    for (const c of wiring.checks) row.run(runId, c.id, v(c.status === "pass"), c.detail);
+    for (const c of wiring.checks)
+      row.run(runId, c.id, v(c.status === "pass"), c.detail, checkAdapter(c.id));
   }
 
   const findings = measuredData(r.findings);
   if (findings !== undefined) {
-    const tally = new Map<string, { rule: string; tier: string; source: string; n: number }>();
+    const tally = new Map<
+      string,
+      { rule: string; tier: string; source: Finding["source"]; n: number }
+    >();
     for (const f of findings.list) {
       const k = `${f.rule}\0${f.severity}\0${f.source}`;
       const t = tally.get(k) ?? { rule: f.rule, tier: f.severity, source: f.source, n: 0 };
@@ -272,19 +304,29 @@ function insertHistory(db: DatabaseSync, r: RunRecord, repoId: number): number {
       tally.set(k, t);
     }
     const countRow = db.prepare(
-      "INSERT INTO run_rule_counts (run_id, rule, tier, source, count) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO run_rule_counts (run_id, rule, tier, source, count, tool) VALUES (?, ?, ?, ?, ?, ?)",
     );
-    for (const t of tally.values()) countRow.run(runId, t.rule, t.tier, t.source, t.n);
+    for (const t of tally.values())
+      countRow.run(runId, t.rule, t.tier, t.source, t.n, toolOf(t.source));
     const top = codeFindings(findings.list)
       .map((f, i) => ({ f, i }))
       .sort((a, b) => SEVERITY_ORDER[a.f.severity] - SEVERITY_ORDER[b.f.severity] || a.i - b.i)
       .slice(0, TOP_FINDINGS_CAP);
     const findingRow = db.prepare(
-      `INSERT INTO run_findings (run_id, rule, tier, source, file, line, message)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO run_findings (run_id, rule, tier, source, file, line, message, tool)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     for (const { f } of top) {
-      findingRow.run(runId, f.rule, f.severity, f.source, f.file, f.line, f.message);
+      findingRow.run(
+        runId,
+        f.rule,
+        f.severity,
+        f.source,
+        f.file,
+        f.line,
+        f.message,
+        toolOf(f.source),
+      );
     }
   }
 
@@ -343,6 +385,7 @@ function refreshLatest(db: DatabaseSync, r: RunRecord, runId: number): void {
     set({
       wiring: wiring.state,
       wiring_run_id: runId,
+      ...(r.languages === undefined ? {} : { languages: v(languagesText(r)) }),
       ...Object.fromEntries(
         Object.entries(WIRING_COLUMNS).map(([col, id]) => [col, v(byId.get(id))]),
       ),
@@ -352,13 +395,19 @@ function refreshLatest(db: DatabaseSync, r: RunRecord, runId: number): void {
   const findings = fullData(r.findings);
   if (findings !== undefined && findings.tiers === "all") {
     const c = findingCounts(r.findings);
-    set({ errors: v(c.errors), warnings: v(c.warnings), findings_run_id: runId });
+    set({
+      errors: v(c.errors),
+      warnings: v(c.warnings),
+      findings_run_id: runId,
+      findings_unavailable: v(unavailableText(r)),
+      ...(r.languages === undefined ? {} : { languages: v(languagesText(r)) }),
+    });
     db.prepare("DELETE FROM findings_latest WHERE repo = ?").run(r.repo.key);
     const row = db.prepare(
-      "INSERT INTO findings_latest (repo, rule, tier, file, line, message) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO findings_latest (repo, rule, tier, file, line, message, tool) VALUES (?, ?, ?, ?, ?, ?, ?)",
     );
     for (const f of codeFindings(findings.list)) {
-      row.run(r.repo.key, f.rule, f.severity, f.file, f.line, f.message);
+      row.run(r.repo.key, f.rule, f.severity, f.file, f.line, f.message, toolOf(f.source));
     }
   }
 

@@ -16,7 +16,7 @@
 // Conventions: times are ISO-8601 UTC TEXT (`2026-11-22T10:00:00.000Z`);
 // booleans are INTEGER 0/1; NULL means "not measured", never zero.
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * projects_latest metric column → the metric name a run records. A command
@@ -33,8 +33,8 @@ export const METRIC_COLUMNS = {
   build_ms: "build_ms",
 } as const;
 
-/** projects_latest wiring column → the wiring check id. */
-export const WIRING_COLUMNS = {
+/** The wiring columns v1 created. Frozen: V1 below must create exactly these, whatever later versions add. */
+const V1_WIRING_COLUMNS = {
   wiring_installed: "installed",
   wiring_sgconfig_canon: "sgconfig-canon",
   wiring_lint_script: "lint-script",
@@ -43,6 +43,20 @@ export const WIRING_COLUMNS = {
   wiring_hook_stop: "hook-stop",
   wiring_preset: "preset",
 } as const;
+
+/** The wiring columns v2 added: the Rust adapter's checks. */
+const V2_WIRING_COLUMNS = {
+  wiring_rust_clippy_strict: "rust.clippy-strict",
+  wiring_rust_lints_inherited: "rust.lints-inherited",
+  wiring_rust_toolchain: "rust.toolchain",
+  wiring_rust_ci: "rust.ci",
+} as const;
+
+/** projects_latest wiring column → the wiring check id. */
+export const WIRING_COLUMNS = { ...V1_WIRING_COLUMNS, ...V2_WIRING_COLUMNS } as const;
+
+/** The metric columns v1 created (all of them to date). Frozen for the same reason. */
+const V1_METRIC_COLUMNS: Readonly<Record<string, string>> = { ...METRIC_COLUMNS };
 
 /** Columns that hold a REAL; every other metric column is INTEGER. */
 const REAL_METRIC_COLUMNS = new Set<string>(["avg_file_sloc"]);
@@ -149,14 +163,14 @@ CREATE TABLE projects_latest (
   owner                    TEXT NOT NULL,
   name                     TEXT NOT NULL,
   wiring                   TEXT,
-${Object.keys(WIRING_COLUMNS)
+${Object.keys(V1_WIRING_COLUMNS)
   .map((c) => `  ${c.padEnd(24)} INTEGER,`)
   .join("\n")}
   errors                   INTEGER,
   warnings                 INTEGER,
   overrides                INTEGER,
   overrides_without_reason INTEGER,
-${Object.keys(METRIC_COLUMNS)
+${Object.keys(V1_METRIC_COLUMNS)
   .map((c) => `  ${c.padEnd(24)} ${REAL_METRIC_COLUMNS.has(c) ? "REAL" : "INTEGER"},`)
   .join("\n")}
   last_run_at              TEXT NOT NULL,
@@ -193,8 +207,48 @@ CREATE TABLE overrides_latest (
 CREATE INDEX overrides_latest_repo ON overrides_latest(repo);
 `;
 
+/**
+ * Rule ids that guardrails itself (not ast-grep) reported when v2 was
+ * written: the text greps, the React structure checks and the file length
+ * ratchet. findings_latest had no source column in v1, so v2 backfills its
+ * new `tool` column from these. Frozen with the migration.
+ */
+const V1_GUARDRAILS_RULES = [
+  "ts-suppression",
+  "jsx-cond-and-textgrep",
+  "react-multi-component",
+  "react-component-needs-folder",
+  "react-component-too-long",
+  "file-sloc",
+];
+
+const TOOL_FROM_SOURCE = `CASE source WHEN 'ast-grep' THEN 'ast-grep' ELSE 'guardrails' END`;
+
+/**
+ * v2: languages. Every statement only ADDS columns and backfills them; no
+ * row of v1 is dropped or rewritten beyond the new columns.
+ */
+const V2 = `
+ALTER TABLE runs ADD COLUMN languages TEXT;
+ALTER TABLE run_parts ADD COLUMN language TEXT;
+ALTER TABLE run_wiring ADD COLUMN adapter TEXT NOT NULL DEFAULT 'typescript';
+UPDATE run_wiring SET adapter = 'shared' WHERE check_id IN ('hook-postedit', 'hook-stop');
+ALTER TABLE run_rule_counts ADD COLUMN tool TEXT NOT NULL DEFAULT 'ast-grep';
+UPDATE run_rule_counts SET tool = ${TOOL_FROM_SOURCE};
+ALTER TABLE run_findings ADD COLUMN tool TEXT NOT NULL DEFAULT 'ast-grep';
+UPDATE run_findings SET tool = ${TOOL_FROM_SOURCE};
+ALTER TABLE findings_latest ADD COLUMN tool TEXT NOT NULL DEFAULT 'ast-grep';
+UPDATE findings_latest SET tool = 'guardrails'
+  WHERE rule IN (${V1_GUARDRAILS_RULES.map((r) => `'${r}'`).join(", ")});
+ALTER TABLE projects_latest ADD COLUMN languages TEXT;
+ALTER TABLE projects_latest ADD COLUMN findings_unavailable TEXT;
+${Object.keys(V2_WIRING_COLUMNS)
+  .map((c) => `ALTER TABLE projects_latest ADD COLUMN ${c} INTEGER;`)
+  .join("\n")}
+`;
+
 /** MIGRATIONS[n] takes the database from user_version n to n + 1. */
-export const MIGRATIONS: readonly string[] = [V1];
+export const MIGRATIONS: readonly string[] = [V1, V2];
 
 /** The latest tables a faceted browser reads, in README order. */
 export const FACET_TABLES = [

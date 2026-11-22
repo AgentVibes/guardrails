@@ -46,10 +46,10 @@ All subcommands accept `--json`.
 
 | command | what | exit |
 |---|---|---|
-| `guardrails verify [paths]` | full scan: rule canon + text-greps + structure (one component per file, 120-line error / 90-line warning) | 1 on any error-tier finding |
-| `guardrails verify-diff [--base R]` | ratchet: error-tier findings on lines your diff ADDED vs merge-base; falls back to whole-file, then whole-tree — never to silence; also judges every file the diff grew against the [per-file length ratchet](#per-file-length-ratchet) | 1 on new findings only |
-| `guardrails doctor` | tool versions + resolution route, ruleset SHA, config discovery | 1 if a tool is missing |
-| `guardrails init` | writes `sgconfig.yml`, `biome.json` (extends the preset), and a detected-and-materialized `[stack]` in `.agentvibes/project.toml` | 0 |
+| `guardrails verify [paths]` | full scan: rule canon + text-greps + structure (one component per file, 120-line error / 90-line warning); in a repo with Rust, also clippy and rustfmt ([Rust](#rust)) | 1 on any error-tier finding, else 2 when a check could not run |
+| `guardrails verify-diff [--base R]` | ratchet: error-tier findings on lines your diff ADDED vs merge-base; falls back to whole-file, then whole-tree — never to silence; also judges every file the diff grew against the [per-file length ratchet](#per-file-length-ratchet) | 1 on new findings only, else 2 when a check could not run |
+| `guardrails doctor` | languages, tool versions + resolution route (cargo, clippy, rustfmt for Rust), ruleset SHA, config discovery, [wiring](#wiring) | 1 if a tool an enabled language needs is missing |
+| `guardrails init` | writes `sgconfig.yml`, `biome.json` (extends the preset), and a detected-and-materialized `[stack]` in `.agentvibes/project.toml`; for Rust, the lint table, `rust-toolchain.toml`, `clippy.toml` and the hooks ([Rust](#rust)) | 0 |
 | `guardrails metrics [paths]` | per-component (loc, hooks, props, observer, JSX depth, branching), per-file (sloc, context-cost) and per-project metrics; `--check` compares the GATED set against the committed `.guardrails/metrics.json` baseline (recomputes facts, never trusts the file); `--update-baseline` tightens it (2% hysteresis, never loosens without `--force`); `--snapshot` appends a JSONL trend row. Both `--check` and `--update-baseline` also run the [per-file length ratchet](#per-file-length-ratchet) | 1 on ratchet regression, 2 when `--check` finds no baseline or the length threshold is invalid |
 | `guardrails snapshot [path]` | records one checkout (default `.`) into the [recording database](#recording), whether or not that repo uses guardrails; writes nothing into it | 2 when the path is not a directory or the record cannot be written; never 1 |
 | `guardrails time [--name N] -- CMD` | runs CMD with its output passed through; while [recording](#recording), stores its wall-clock time in ms as metric N (default `build_ms`) when it exits 0 | CMD's own exit code; 127 when CMD cannot start; 2 on a usage error |
@@ -352,6 +352,137 @@ canon (see "Overrides"); `off` when nothing but the preset check passes;
 Wiring is a report: it never changes `doctor`'s exit code, which stays the
 tools-and-drift verdict.
 
+The TypeScript checks (`installed`, `sgconfig-canon`, `lint-script`, `ci`,
+`preset`) run only when TypeScript is enabled, the `rust.*` checks only when
+Rust is (see [Languages](#languages)); the two hook checks are shared. A
+Rust-only repo is `on` with the hook checks and the four Rust checks.
+
+## Languages
+
+guardrails runs one adapter per language. A repo's languages are detected:
+
+| language | detected by |
+|---|---|
+| `typescript` | `package.json` or `tsconfig.json` in the repo root |
+| `rust` | a `Cargo.toml` anywhere in the checkout, except under `node_modules`, `target`, `.git` and fixture directories (`fixtures`, `testdata`, `test-fixtures`) |
+
+Both found means a mixed repo, and both adapters run. Neither found means
+`typescript`, which is what guardrails did before it knew other languages.
+`doctor` prints the languages and the evidence. To set the list yourself:
+
+```toml
+# .agentvibes/project.toml
+[languages]
+enabled = ["rust"]   # or ["typescript"], or both
+```
+
+An unknown language, an empty list or an unknown key is a config error:
+`verify` exits 2 and `doctor` exits 1, with the problem named.
+
+## Rust
+
+For Rust, guardrails does not bring its own rules: the rules are Clippy's,
+and guardrails checks that a repo runs Clippy strictly, lists every place it
+switches a lint off, and gates new findings on the lines a diff added.
+
+**Commands.**
+
+- `verify` runs `cargo clippy --workspace --all-targets
+  --message-format=json --keep-going -- --cap-lints warn` and `cargo fmt
+  --all --check` in every Cargo root (a workspace root, or a crate that is in
+  no workspace). The lint cap makes cargo check every crate even when one
+  crate has a deny-level finding; each finding keeps its original level in
+  the message, and every finding is error tier, because CI runs Clippy with
+  `-D warnings`.
+- `verify-diff` runs the same checks only in Cargo roots where a `.rs` file
+  changed, and fails only on findings on added lines (the same rungs as
+  TypeScript: added lines vs merge-base, else whole changed files, else the
+  whole tree).
+- `hook-postedit` on a `.rs` file runs `cargo clippy -p <package>` for the
+  package that owns the file, and reports findings in that file on the
+  lines the edit changed. For a whole-file write of a tracked file, findings
+  on lines that are already in `HEAD` are warnings.
+- `hook-stop` runs the `verify-diff` check for the session.
+- `snapshot` runs the full check with `--locked` and, unless
+  `CARGO_TARGET_DIR` is set, a target directory under
+  `$XDG_CACHE_HOME/agentvibes/guardrails/cargo-target/`, so it writes nothing
+  into the repo.
+
+cargo runs with your environment: `RUSTC_WRAPPER` (sccache) and
+`CARGO_TARGET_DIR` are used as set. `GUARDRAILS_CLIPPY_TIMEOUT_S` limits each
+cargo call; without it, `verify` and `verify-diff` have no limit,
+`hook-postedit` has 90 s, `hook-stop` 300 s and `snapshot` 900 s.
+
+**A check that cannot run is never a pass.** A build that does not compile,
+a manifest cargo cannot load, a missing toolchain or a timeout makes that
+check `unavailable` with the reason. `verify` and `verify-diff` print the
+reason and exit 2 (exit 1 still wins when there are error findings), and a
+recorded run stores the findings part as `unavailable`, not as zero. In a
+mixed repo, the TypeScript findings are still recorded and
+`projects_latest.findings_unavailable` names the language that could not be
+measured. The hooks never fail an edit or a stop because of a tooling
+problem: they print the reason on stderr and exit 0.
+
+**Wiring checks** (`doctor`; each with its evidence):
+
+| check | passes when |
+|---|---|
+| `rust.clippy-strict` | the lint table that governs each Cargo root (`[workspace.lints]` in a workspace root, `[lints]` in a single crate) has every canon entry at the canon level or stricter, and `pedantic` and `nursery` at `warn` or above with priority -1 or lower |
+| `rust.lints-inherited` | every workspace member has `[lints] workspace = true` (a member with its own `[lints]` table fails, and its table is compared with the canon as an override) |
+| `rust.toolchain` | `rust-toolchain.toml` (or `rust-toolchain`) is in the Cargo root or the repo root |
+| `rust.ci` | a CI workflow, or a script it runs, runs `cargo clippy` with `-D warnings` (on the command line or in `RUSTFLAGS`) and `cargo fmt --check`, or runs `guardrails verify`, `verify-diff` or the reusable gate |
+
+**`init`** in a repo with Rust appends the canon to each Cargo root that has
+no lint table, adds `[lints] workspace = true` to each member without
+`[lints]`, writes `rust-toolchain.toml` (the installed stable version, with
+`clippy` and `rustfmt`) and `clippy.toml` when they are missing, and adds the
+`PostToolUse` and `Stop` hooks to `.claude/settings.json`. It only adds: an
+existing table or file is left as it is and reported as skipped. In a repo
+without TypeScript it writes none of the TypeScript files.
+
+### The Clippy canon
+
+The canon is `configs/rust-lints.toml` in this package. It follows common
+Clippy practice for code that agents write: the strict groups as warnings
+that CI turns into errors, plus the restriction lints that stop the usual
+shortcuts.
+
+| entry | level | why |
+|---|---|---|
+| `clippy::pedantic` | warn, priority -1 | the stricter default lints (casts that lose data, missing `#[must_use]`, needless pass-by-value). Priority -1 puts the group under single lints, so one lint can still be raised or, with a reason, lowered. |
+| `clippy::nursery` | warn, priority -1 | newer lints that catch real mistakes (`missing_const_for_fn`, `significant_drop_tightening`). They are still maturing, so a false positive is an `#[expect]` with a reason, not a reason to drop the group. |
+| `clippy::unwrap_used` | deny | an `unwrap()` turns a recoverable error into a panic and hides the error path. Return the error with `?`, or handle the `None`. |
+| `clippy::expect_used` | deny | the same as `unwrap()` with a message. Where a panic is really right, say why with `#[expect(clippy::expect_used, reason = "…")]`. |
+| `clippy::panic` | deny | an explicit `panic!` in library code is an error path nobody can handle. |
+| `clippy::todo` | deny | `todo!()` compiles and then panics at run time: unfinished code that looks finished. |
+| `clippy::unimplemented` | deny | the same, for `unimplemented!()`. |
+| `clippy::dbg_macro` | deny | `dbg!` is debugging output left in the code. |
+| `clippy::allow_attributes` | deny | `#[allow]` stays silent when the lint no longer fires, so it outlives its cause. `#[expect]` warns when it is no longer needed. |
+| `clippy::allow_attributes_without_reason` | deny | every switched-off lint says why, with `reason = "…"`, the Rust form of `ast-grep-ignore: <rule> -- <why>`. |
+| `clippy::undocumented_unsafe_blocks` | deny | every `unsafe` block has a `// SAFETY:` comment that says why it is sound. |
+| `rust::unsafe_code` | deny | no `unsafe` unless a crate opts in, with a reason, where it really needs it. |
+
+A repo may be stricter (`warn` → `deny`, `deny` → `forbid`). A canon lint set
+lower, and any lint set to `allow`, is an override (below).
+
+**Test code.** The shipped `clippy.toml` sets `allow-unwrap-in-tests`,
+`allow-expect-in-tests` and `allow-panic-in-tests`: a failing test should
+panic, and the error path it would otherwise need is noise. Nothing else is
+relaxed for tests by Clippy. In the override list, an `#[allow]` or
+`#[expect]` that has a `reason` and is in test code (a `#[cfg(test)]` or
+`#[test]` item, a `cfg_attr(test, …)`, or a file under `tests/`, `benches/`
+or `examples/`) is not listed; one without a reason is listed as usual.
+
+**Overrides.** Two kinds are added to the [override inventory](#overrides):
+
+| kind | what | where the reason goes |
+|---|---|---|
+| `rust-allow` | each lint named in `#[allow(…)]`, `#![allow(…)]` or `#[expect(…)]`, also inside `#[cfg_attr(…, …)]`; text in comments and strings is not read | `reason = "…"` in the same attribute |
+| `cargo-lint` | a canon lint set lower than the canon, or any lint set to `allow`, in the lint table that governs a crate | `[[override]]`, `kind = "cargo-lint"`, `rule` = `clippy::<name>` (or `rust::<name>`), `paths` = the `Cargo.toml` |
+
+To fix a finding or switch it off: fix it, or put
+`#[expect(<lint>, reason = "<why this is legitimate>")]` on the item.
+
 ## Recording
 
 guardrails can write what each run saw into a SQLite database, one row per
@@ -405,7 +536,7 @@ reason), or `skipped` (this command does not measure it).
 | `snapshot` | all tiers, `full` | `full` | `full` | `full` |
 | `time` | skipped | skipped | skipped | `full` (one metric), or `unavailable` when CMD did not exit 0 |
 
-### Schema (version 1)
+### Schema (version 2)
 
 Times are ISO-8601 UTC text. Booleans are `0`/`1`. `NULL` means "not
 measured", never zero. The schema version is `PRAGMA user_version`; a newer
@@ -416,11 +547,11 @@ version than this guardrails knows is refused, never written.
 | table | one row per | columns |
 |---|---|---|
 | `repos` | repo | `key` (unique), `host`, `owner`, `name` |
-| `runs` | run | `repo_id`, `at`, `command`, `root`, `sha`, `branch`, `duration_ms`, `exit_code`, `guardrails_version`, `node_version`, `ast_grep_version`, `biome_version`, `wiring`, `errors`, `warnings`, `overrides`, `overrides_without_reason` |
-| `run_parts` | run × part | `run_id`, `part` (`findings`/`overrides`/`wiring`/`metrics`), `status` (`measured`/`unavailable`/`skipped`), `scope` (`full`/`diff`/`paths`), `reason` |
-| `run_wiring` | run × wiring check | `run_id`, `check_id`, `pass`, `detail` |
-| `run_rule_counts` | run × rule × tier × source | `run_id`, `rule`, `tier`, `source`, `count` |
-| `run_findings` | finding, at most 200 per run, errors first | `run_id`, `rule`, `tier`, `source`, `file`, `line`, `message` |
+| `runs` | run | `repo_id`, `at`, `command`, `root`, `sha`, `branch`, `duration_ms`, `exit_code`, `guardrails_version`, `node_version`, `ast_grep_version`, `biome_version`, `wiring`, `errors`, `warnings`, `overrides`, `overrides_without_reason`, `languages` (v2: the enabled languages, comma-separated, `typescript,rust`; `NULL` for a v1 run) |
+| `run_parts` | run × part, and run × language for findings | `run_id`, `part` (`findings`/`overrides`/`wiring`/`metrics`), `status` (`measured`/`unavailable`/`skipped`), `scope` (`full`/`diff`/`paths`), `reason`, `language` (v2: `NULL` for the part of the whole run; a `findings` row per language checked, `typescript` or `rust`) |
+| `run_wiring` | run × wiring check | `run_id`, `check_id`, `pass`, `detail`, `adapter` (v2: `shared` for the hook checks, `typescript`, or `rust` for `rust.*`) |
+| `run_rule_counts` | run × rule × tier × source | `run_id`, `rule`, `tier`, `source`, `count`, `tool` (v2: `ast-grep`, `guardrails`, `clippy`, `rustc`, `rustfmt`) |
+| `run_findings` | finding, at most 200 per run, errors first | `run_id`, `rule`, `tier`, `source`, `file`, `line`, `message`, `tool` (v2) |
 | `run_overrides` | override | `run_id`, `kind`, `rule`, `where`, `file`, `line`, `reason`, `has_reason` |
 
 The repo key is `host/owner/name` from the `origin` remote: lowercase,
@@ -443,8 +574,8 @@ the `*_run_id` columns say which run each group of columns came from.
 
 | table | one row per | columns |
 |---|---|---|
-| `projects_latest` | repo | `key`, `host`, `owner`, `name`; `wiring` (`off`/`partial`/`on`); `wiring_installed`, `wiring_sgconfig_canon`, `wiring_lint_script`, `wiring_ci`, `wiring_hook_postedit`, `wiring_hook_stop`, `wiring_preset`; `errors`, `warnings`, `overrides`, `overrides_without_reason`; `sloc`, `files`, `avg_file_sloc` (REAL), `files_over_sloc_limit`, `run_in_action`, `worktrees`, `local_branches`, `build_ms`; `last_run_at`, `last_sha`, `last_branch`, `last_command`; `wiring_run_id`, `findings_run_id`, `overrides_run_id` |
-| `findings_latest` | code finding of the latest full `verify` | `repo`, `rule`, `tier`, `file`, `line`, `message` |
+| `projects_latest` | repo | `key`, `host`, `owner`, `name`; `wiring` (`off`/`partial`/`on`); `wiring_installed`, `wiring_sgconfig_canon`, `wiring_lint_script`, `wiring_ci`, `wiring_hook_postedit`, `wiring_hook_stop`, `wiring_preset`, and (v2) `wiring_rust_clippy_strict`, `wiring_rust_lints_inherited`, `wiring_rust_toolchain`, `wiring_rust_ci`; `languages` (v2), `findings_unavailable` (v2: one `<language>: <reason>` line per language whose findings could not be measured, `NULL` when all were); `errors`, `warnings`, `overrides`, `overrides_without_reason`; `sloc`, `files`, `avg_file_sloc` (REAL), `files_over_sloc_limit`, `run_in_action`, `worktrees`, `local_branches`, `build_ms`; `last_run_at`, `last_sha`, `last_branch`, `last_command`; `wiring_run_id`, `findings_run_id`, `overrides_run_id` |
+| `findings_latest` | code finding of the latest full `verify` | `repo`, `rule`, `tier`, `file`, `line`, `message`, `tool` (v2) |
 | `overrides_latest` | override of the latest full measurement | `repo`, `kind`, `rule`, `where`, `reason`, `has_reason`, `file`, `line` |
 | `metric_history` | run × metric | `run_id`, `repo`, `at`, `metric`, `value` (REAL) |
 
@@ -473,6 +604,15 @@ in `projects_latest`; the other columns keep their values.
 `projects_latest` reads `files` from `fileCount`, `run_in_action` from
 `runInActionCount`, `worktrees` and `local_branches` from the `git_*`
 metrics, and the other metric columns by their own names.
+
+**v1 → v2.** The migration runs on the first write by a 0.4 guardrails, in
+one transaction, and only adds columns: every v1 row is kept. It backfills
+`tool` from `source` (`ast-grep` stays `ast-grep`, the other sources become
+`guardrails`), `findings_latest.tool` from the rule name (guardrails' own
+rules are `guardrails`, the rest `ast-grep`), and `run_wiring.adapter`
+(`shared` for `hook-postedit` and `hook-stop`, else `typescript`). The
+`languages` columns stay `NULL` for v1 runs. A guardrails 0.3 refuses a v2
+database, so upgrade every writer and reader of one database together.
 
 "Wired but overridden" is `wiring = 'partial' AND overrides > 0`:
 

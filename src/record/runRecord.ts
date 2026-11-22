@@ -1,4 +1,5 @@
 import type { Finding, Severity } from "../findings.js";
+import type { LanguageId } from "../lang/languages.js";
 import type { Override } from "../overrides.js";
 import type { WiringReport } from "../wiring.js";
 
@@ -47,6 +48,12 @@ export interface ToolVersions {
   biome: string | undefined;
 }
 
+/** Whether one language's findings were measured, and how many: `unavailable` is never zero. */
+export interface LanguageFindings {
+  language: LanguageId;
+  part: Part<number>;
+}
+
 export interface RunRecord {
   repo: RepoIdentity;
   /** Absolute path of the checkout the run looked at. */
@@ -65,6 +72,10 @@ export interface RunRecord {
   wiring: Part<WiringReport>;
   /** Metric name → value. Names are stable API: see METRIC_COLUMNS in schema.ts. */
   metrics: Part<Record<string, number>>;
+  /** The languages the run checked; undefined when it checked none (metrics, time). */
+  languages: LanguageId[] | undefined;
+  /** Per-language findings status, one entry per language the run checked. */
+  languageFindings: LanguageFindings[];
 }
 
 export type Tier = Severity;

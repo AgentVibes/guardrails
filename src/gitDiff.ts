@@ -14,6 +14,10 @@ function git(root: string | undefined, args: string[]): string | undefined {
   return res.stdout;
 }
 
+/** The paths the TypeScript adapter diffs; the default everywhere, so existing callers are unchanged. */
+export const TS_PATHSPECS: readonly string[] = ["*.ts", "*.tsx"];
+export const RUST_PATHSPECS: readonly string[] = ["*.rs"];
+
 export function gitRoot(cwd: string): string | undefined {
   return git(cwd, ["rev-parse", "--show-toplevel"])?.trim();
 }
@@ -66,15 +70,16 @@ export function resolveMergeBase(root: string, explicitBase?: string): string | 
 export function changedFiles(
   root: string,
   mergeBase: string,
+  pathspecs: readonly string[] = TS_PATHSPECS,
 ): { tracked: string[]; untracked: string[] } {
   const tracked = (
-    git(root, ["diff", "--name-only", "--diff-filter=ACMR", mergeBase, "--", "*.ts", "*.tsx"]) ?? ""
+    git(root, ["diff", "--name-only", "--diff-filter=ACMR", mergeBase, "--", ...pathspecs]) ?? ""
   )
     .split("\n")
     .filter((f) => f !== "")
     .map((f) => absPath(root, f));
   const untracked = (
-    git(root, ["ls-files", "--others", "--exclude-standard", "--", "*.ts", "*.tsx"]) ?? ""
+    git(root, ["ls-files", "--others", "--exclude-standard", "--", ...pathspecs]) ?? ""
   )
     .split("\n")
     .filter((f) => f !== "")
@@ -94,8 +99,12 @@ export function changedFiles(
  * Keyed by ABSOLUTE path (like changedFiles). A file with no added lines — a
  * pure rename, a deletion — is absent rather than mapped to an empty set.
  */
-export function addedLinesByFile(root: string, mergeBase: string): Map<string, Set<number>> {
-  const out = git(root, ["diff", "-U0", "-M", mergeBase, "--", "*.ts", "*.tsx"]) ?? "";
+export function addedLinesByFile(
+  root: string,
+  mergeBase: string,
+  pathspecs: readonly string[] = TS_PATHSPECS,
+): Map<string, Set<number>> {
+  const out = git(root, ["diff", "-U0", "-M", mergeBase, "--", ...pathspecs]) ?? "";
   const byFile = new Map<string, Set<number>>();
   let file: string | undefined;
   // `+++ ` is a header only between `diff --git` and the file's first `@@`.
@@ -135,8 +144,13 @@ export function addedLinesByFile(root: string, mergeBase: string): Map<string, S
  * 1-based line numbers ADDED in the working tree vs mergeBase for one file.
  * "No added lines" and "file absent from the diff" are both the empty set.
  */
-export function addedLines(root: string, mergeBase: string, file: string): Set<number> {
-  return addedLinesByFile(root, mergeBase).get(absPath(root, file)) ?? new Set<number>();
+export function addedLines(
+  root: string,
+  mergeBase: string,
+  file: string,
+  pathspecs: readonly string[] = TS_PATHSPECS,
+): Set<number> {
+  return addedLinesByFile(root, mergeBase, pathspecs).get(absPath(root, file)) ?? new Set<number>();
 }
 
 /**
@@ -144,18 +158,14 @@ export function addedLines(root: string, mergeBase: string, file: string): Set<n
  * The per-file length ratchet needs it so a renamed file keeps the ceiling
  * its old path holds in the baseline.
  */
-export function renamedFrom(root: string, mergeBase: string): Map<string, string> {
+export function renamedFrom(
+  root: string,
+  mergeBase: string,
+  pathspecs: readonly string[] = TS_PATHSPECS,
+): Map<string, string> {
   const out =
-    git(root, [
-      "diff",
-      "--name-status",
-      "-M",
-      "--diff-filter=R",
-      mergeBase,
-      "--",
-      "*.ts",
-      "*.tsx",
-    ]) ?? "";
+    git(root, ["diff", "--name-status", "-M", "--diff-filter=R", mergeBase, "--", ...pathspecs]) ??
+    "";
   const map = new Map<string, string>();
   for (const line of out.split("\n")) {
     const [status, from, to] = line.split("\t");

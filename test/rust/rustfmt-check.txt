@@ -1,0 +1,11 @@
+Diff in /work/ws/crates/b/src/lib.rs:1:
+ pub fn twice(x: i32) -> i32 {
+-    a::add(x,x)
++    a::add(x, x)
+ }
+ 
+-
+-
+-pub fn z( ) {}
++pub fn z() {}
+ 
