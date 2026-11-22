@@ -5,8 +5,9 @@
 - Overrides inventory: `verify` and `doctor` list every deviation from the
   canon (inline `ast-grep-ignore` / `biome-ignore`, `[verify]` scopes,
   biome rule overrides, repo rules reusing a canon id, a raised
-  `max_file_sloc`) with its reason, under `overrides` in `--json`. A
-  reason-less one is a warning, `override-without-reason`; a declaration that
+  `max_file_sloc`) with its reason, under `overrides` in `--json`. Every
+  override is a warning, `canon-overridden`, reason or not; a reason-less one
+  is also `override-without-reason`; a declaration that
   matches nothing is `override-declared-unused`. Configured overrides take
   their reason from `[[override]]` in `.agentvibes/project.toml`.
   `collectOverrides(root)` is exported as `@agentvibes/guardrails/overrides`.

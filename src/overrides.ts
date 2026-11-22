@@ -21,6 +21,11 @@ import { readTomlTable } from "./tomlTable.js";
 // Warnings never change an exit code, so this makes deviations visible without
 // turning any repo red the day it upgrades.
 //
+// Every override, reasoned or not, is also a `canon-overridden` warning: a
+// written reason makes a deviation legitimate, not invisible. A repo that is
+// wired but overrides anything is PARTIALLY wired, never fully (wiring state
+// `partial`, not `on`).
+//
 // Where the reason lives:
 //   - inline suppressions (`// ast-grep-ignore: <id> -- <why>`, the JSX form
 //     `{/* ast-grep-ignore: <id> -- <why> */}`, `// biome-ignore <rule>: <why>`)
@@ -33,6 +38,8 @@ import { readTomlTable } from "./tomlTable.js";
 // Not overrides: a `[severity]` RAISE makes the gate stricter, and a lowering
 // is already refused by severity.ts. A lower `max_file_sloc` is also stricter.
 
+/** One per override, reason or not: the repo runs a weaker gate than the canon here. */
+export const CANON_OVERRIDDEN = "canon-overridden";
 export const OVERRIDE_WITHOUT_REASON = "override-without-reason";
 export const OVERRIDE_DECLARED_UNUSED = "override-declared-unused";
 
@@ -61,7 +68,7 @@ export interface Override {
 
 export interface OverrideReport {
   overrides: Override[];
-  /** `override-without-reason` and `override-declared-unused`, warning tier. */
+  /** `canon-overridden` (one per override), `override-without-reason`, `override-declared-unused`; all warning tier. */
   findings: Finding[];
 }
 
@@ -311,6 +318,16 @@ export function collectOverrides(root: string, targets: string[] = ["."]): Overr
     }),
     ...inlineOverrides(root, targets),
   ];
+  const overridden: Finding[] = overrides.map((o) =>
+    warning(
+      CANON_OVERRIDDEN,
+      o,
+      `${o.where}: ${o.kind} ${o.rule} overrides the canon — ${match(o.reason)
+        .with({ status: "given" }, (r) => `reason: ${r.text}`)
+        .with({ status: "missing" }, () => "no reason given")
+        .exhaustive()}`,
+    ),
+  );
   const findings: Finding[] = overrides
     .filter((o) => o.reason.status === "missing")
     .map((o) =>
@@ -349,5 +366,5 @@ export function collectOverrides(root: string, targets: string[] = ["."]): Overr
       ),
     );
   }
-  return { overrides, findings };
+  return { overrides, findings: [...overridden, ...findings] };
 }

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { OverrideConfigError } from "./overrideDeclarations.js";
 import {
+  CANON_OVERRIDDEN,
   collectOverrides,
   OVERRIDE_DECLARED_UNUSED,
   OVERRIDE_WITHOUT_REASON,
@@ -173,6 +174,18 @@ function main(): number {
         (f) => f.file === "src/a.ts" && f.line === 3 && f.message.includes("no-as-any"),
       ),
       noReason,
+    );
+    // Owner rule: an override is a warning even WITH a reason.
+    const overridden = report.findings.filter((f) => f.rule === CANON_OVERRIDDEN);
+    expect(
+      "every override, reasoned or not, is a canon-overridden warning",
+      overridden.length === want.length &&
+        overridden.every((f) => f.severity === "warning") &&
+        overridden.some((f) =>
+          f.message.includes("reason: the cleanup may fail and that is fine"),
+        ) &&
+        overridden.some((f) => f.message.includes("no reason given")),
+      overridden,
     );
     const unused = report.findings.filter((f) => f.rule === OVERRIDE_DECLARED_UNUSED);
     expect(

@@ -288,9 +288,12 @@ never escapable: they fork the preset.
 ## Overrides
 
 An override is any place a repo deviates from the canon. `guardrails verify`
-and `guardrails doctor` list every one with its reason, and a reason-less one is
-a warning finding, `override-without-reason`. Warnings do not change an exit
-code. `verify --json` and `doctor --json` carry the list as `overrides`; from
+and `guardrails doctor` list every one with its reason. Each override is a
+warning finding, `canon-overridden`, even when it has a reason: the reason makes
+the deviation legitimate, not invisible. A reason-less one is a second warning,
+`override-without-reason`. Warnings do not change an exit code. A repo that is
+wired but overrides anything counts as partially wired, not fully wired.
+`verify --json` and `doctor --json` carry the list as `overrides`; from
 code, `collectOverrides(root)` from `@agentvibes/guardrails/overrides` returns it.
 
 | kind | what | where the reason goes |
