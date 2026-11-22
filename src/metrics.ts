@@ -28,6 +28,7 @@ import {
 import { collectMetrics } from "./metricsCollect.js";
 import type { ProjectMetrics } from "./metricsTypes.js";
 import { type RunCollector, scopeOf } from "./record/record.js";
+import { repoMetrics } from "./record/repoMetrics.js";
 
 export interface MetricsOptions {
   targets: string[];
@@ -163,7 +164,10 @@ function runMetricsInner(opts: MetricsOptions): number {
   const targets = opts.targets.length > 0 ? opts.targets : ["."];
 
   const metrics = aggregate(collectMetrics(targets));
-  opts.run.addMetrics(scopeOf(targets), recordedMetrics(metrics));
+  const scope = scopeOf(targets);
+  opts.run.addMetrics(scope, recordedMetrics(metrics));
+  // Whole-repo extras only the record reads; not measured for a path subset.
+  if (opts.run.recording && scope === "full") opts.run.addMetrics(scope, repoMetrics(metrics, cwd));
   const commit = headCommit(cwd);
 
   if (opts.snapshot) {

@@ -5,7 +5,7 @@ import type { Override } from "../overrides.js";
 import { packageRoot } from "../packagePaths.js";
 import { resolvedVersion } from "../toolResolve.js";
 import type { WiringReport } from "../wiring.js";
-import { recordTarget } from "./config.js";
+import { type RecordTarget, recordTarget } from "./config.js";
 import { currentBranch, headSha, repoIdentity } from "./repoKey.js";
 import type { FindingsData, Part, RunRecord, RunScope } from "./runRecord.js";
 import { SKIPPED } from "./runRecord.js";
@@ -18,17 +18,43 @@ import { openDatabase, writeRun } from "./writer.js";
 // record needs (verify-diff's override walk), so an unrecorded run costs
 // nothing extra.
 
+/**
+ * Where this run records, resolved ONCE when the run starts: `snapshot`
+ * changes directory into the repo it observes, and a relative
+ * GUARDRAILS_RECORD must keep meaning what it meant where it was typed. A
+ * user config that cannot be read is `broken`: the run goes on and the
+ * error is reported when the record would be written.
+ */
+export type ResolvedTarget = RecordTarget | { status: "broken"; error: string };
+
+export function resolveTarget(force = false): ResolvedTarget {
+  try {
+    return recordTarget(process.env, force);
+  } catch (err) {
+    return { status: "broken", error: (err as Error).message };
+  }
+}
+
+export const NOT_RECORDING: ResolvedTarget = { status: "off" };
+
 export class RunCollector {
   findings: Part<FindingsData> = SKIPPED;
   overrides: Part<Override[]> = SKIPPED;
   wiring: Part<WiringReport> = SKIPPED;
   metrics: Part<Record<string, number>> = SKIPPED;
 
-  constructor(
-    /** Whether this run will be recorded; computed once from the environment. */
-    readonly recording: boolean,
-    readonly root: string = process.cwd(),
-  ) {}
+  /** The checkout the run observes; `snapshot` points it at another directory. */
+  root: string = process.cwd();
+
+  constructor(readonly target: ResolvedTarget) {}
+
+  /** Whether this run will be recorded, so record-only work is worth doing. */
+  get recording(): boolean {
+    return match(this.target)
+      .with({ status: "off" }, () => false)
+      .with({ status: "on" }, { status: "broken" }, () => true)
+      .exhaustive();
+  }
 
   /** Records metrics by name. Several calls in one run merge, the later value winning. */
   addMetrics(scope: RunScope, values: Record<string, number>): void {
@@ -63,23 +89,11 @@ function guardrailsVersion(): string {
   return pkg.version;
 }
 
-/** Whether a run of this kind records: the variable says yes, or `force` (snapshot). */
-export function shouldRecord(force = false): boolean {
-  try {
-    return recordTarget(process.env, force).status === "on";
-  } catch {
-    // A broken user config must still reach recordRun, which reports it.
-    return true;
-  }
-}
-
 export interface RunMeta {
   command: string;
   exitCode: number;
   durationMs: number;
   startedAt: Date;
-  /** snapshot: record even when GUARDRAILS_RECORD is unset. */
-  force?: boolean;
 }
 
 /**
@@ -90,9 +104,11 @@ export interface RunMeta {
 export async function recordRun(c: RunCollector, meta: RunMeta): Promise<RecordOutcome> {
   let db: string | undefined;
   try {
-    const target = recordTarget(process.env, meta.force ?? false);
-    return await match(target)
+    return await match(c.target)
       .with({ status: "off" }, async () => ({ status: "off" }) as const)
+      .with({ status: "broken" }, async (t) => {
+        throw new Error(t.error);
+      })
       .with({ status: "on" }, async (t) => {
         db = t.db;
         const record: RunRecord = {

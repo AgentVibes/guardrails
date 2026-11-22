@@ -11,6 +11,7 @@ export {
   userConfigPath,
 } from "./config.js";
 export { parseRemote, repoIdentity } from "./repoKey.js";
+export { LANGUAGES } from "./repoMetrics.js";
 export type {
   FindingsData,
   Part,

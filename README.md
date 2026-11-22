@@ -51,6 +51,7 @@ All subcommands accept `--json`.
 | `guardrails doctor` | tool versions + resolution route, ruleset SHA, config discovery | 1 if a tool is missing |
 | `guardrails init` | writes `sgconfig.yml`, `biome.json` (extends the preset), and a detected-and-materialized `[stack]` in `.agentvibes/project.toml` | 0 |
 | `guardrails metrics [paths]` | per-component (loc, hooks, props, observer, JSX depth, branching), per-file (sloc, context-cost) and per-project metrics; `--check` compares the GATED set against the committed `.guardrails/metrics.json` baseline (recomputes facts, never trusts the file); `--update-baseline` tightens it (2% hysteresis, never loosens without `--force`); `--snapshot` appends a JSONL trend row. Both `--check` and `--update-baseline` also run the [per-file length ratchet](#per-file-length-ratchet) | 1 on ratchet regression, 2 when `--check` finds no baseline or the length threshold is invalid |
+| `guardrails snapshot [path]` | records one checkout (default `.`) into the [recording database](#recording), whether or not that repo uses guardrails; writes nothing into it | 2 when the path is not a directory or the record cannot be written; never 1 |
 
 Gated (ratchet, lower = better): p90 component_loc, useState density,
 inline-map-row count, p90 context-cost, runInAction count, async-in-store,
@@ -368,7 +369,17 @@ off unless you turn it on.
 `verify`, `verify-diff`, `metrics` and `hook-stop` record. `hook-postedit`,
 `doctor`, `init`, `leaks`, `deploy` and `iterate` do not. A database that
 cannot be written prints one line on stderr and never changes the exit code:
-a state database is not a gate. Node 22.13 or later is needed
+a state database is not a gate.
+
+`guardrails snapshot [path]` always records: with `GUARDRAILS_RECORD`
+unset it uses the configured or default database. It measures every part
+over the whole checkout, each on its own: a part that fails (preset drift, a
+repo `sgconfig.yml` pointing at a canon that is not installed, a bad
+`[[override]]` table) is recorded `unavailable` with the reason, and the
+rest is still recorded. So a repo that does not use guardrails gets wiring
+`off` and its metrics. It writes nothing into the repo, and a relative
+`GUARDRAILS_RECORD` path is resolved where the command was typed. To record
+many repos: `for r in ~/src/*/; do guardrails snapshot "$r"; done`. Node 22.13 or later is needed
 (`node:sqlite`); it is loaded only when a run records.
 
 Readers import `SCHEMA_VERSION`, the table and column maps and row types from
@@ -387,6 +398,7 @@ reason), or `skipped` (this command does not measure it).
 | `verify-diff` | error tier only, `diff` | `full` | `full` | skipped |
 | `hook-stop` | error tier only, `diff` | skipped | skipped | skipped |
 | `metrics` | skipped | skipped | skipped | `full` or `paths` |
+| `snapshot` | all tiers, `full` | `full` | `full` | `full` |
 
 ### Schema (version 1)
 
@@ -431,10 +443,24 @@ the `*_run_id` columns say which run each group of columns came from.
 | `overrides_latest` | override of the latest full measurement | `repo`, `kind`, `rule`, `where`, `reason`, `has_reason`, `file`, `line` |
 | `metric_history` | run × metric | `run_id`, `repo`, `at`, `metric`, `value` (REAL) |
 
-`metric_history` holds every metric of a full-scope `metrics` run under its
-`--json` key (`p90ComponentLoc`, `runInActionCount`, `fileCount`,
-`hooksTotal.useState`, …), plus `errors`, `warnings`, `overrides` and
-`overrides_without_reason` from each full `verify`.
+`metric_history` holds, for each full-scope `metrics` or `snapshot` run:
+
+- every `metrics --json` number under its key (`p90ComponentLoc`,
+  `runInActionCount`, `fileCount`, `hooksTotal.useState`, …);
+- `sloc` (the production TS/TSX SLOC that `metrics` measures per file),
+  `avg_file_sloc`, `files_over_sloc_limit` (files over `max_file_sloc`);
+- `loc` (non-blank lines of the project's code files: tracked plus
+  untracked-but-not-ignored, files over 2 MB skipped), `loc_files`, and
+  `loc.<language>` (`loc.typescript`, `loc.tsx`, `loc.css`, `loc.rust`, …;
+  `LANGUAGES` in `@agentvibes/guardrails/record` is the extension map);
+- `git_worktrees` (open worktrees, the main one included) and
+  `git_local_branches`;
+- `errors`, `warnings`, `overrides` and `overrides_without_reason` from a
+  full `verify` or `snapshot`.
+
+`projects_latest` reads `files` from `fileCount`, `run_in_action` from
+`runInActionCount`, `worktrees` and `local_branches` from the `git_*`
+metrics, and the other metric columns by their own names.
 
 "Wired but overridden" is `wiring = 'partial' AND overrides > 0`:
 

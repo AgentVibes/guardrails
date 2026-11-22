@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { match } from "ts-pattern";
+import { dropGitignored } from "./fileSloc.js";
 import { DEFAULT_MAX_FILE_SLOC } from "./fileSlocBaseline.js";
 import { collectFiles } from "./fileWalk.js";
 import type { Finding } from "./findings.js";
@@ -106,9 +107,14 @@ function rel(root: string, path: string): string {
 
 function inlineOverrides(root: string, targets: string[]): Override[] {
   const out: Override[] = [];
-  const files = collectFiles(
-    targets.map((t) => resolve(root, t)),
-    SOURCE_EXTS,
+  // Gitignored files (generated code, local build output) are not the
+  // project's source, so a suppression in them is not the project's override.
+  const files = dropGitignored(
+    collectFiles(
+      targets.map((t) => resolve(root, t)),
+      SOURCE_EXTS,
+    ),
+    root,
   );
   for (const file of files) {
     let text: string;
