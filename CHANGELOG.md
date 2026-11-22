@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `guardrails time [--name N] -- CMD` runs a command, passes its output and
+  exit code through, and, while recording, stores its wall-clock time as
+  metric `build_ms` (or N; `projects_latest.build_ms`). A run that does not
+  exit 0 is recorded without a time. 127 when the command cannot start.
 - `guardrails snapshot [path]` records one checkout into the recording
   database, whether or not it uses guardrails, and writes nothing into it.
   Each part is measured on its own; one that fails is recorded `unavailable`
