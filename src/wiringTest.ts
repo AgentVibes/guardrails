@@ -1,6 +1,6 @@
 import "./testIsolation.js";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { packageRoot } from "./packagePaths.js";
@@ -38,6 +38,23 @@ const WIRED: Record<string, string> = {
   ),
   "biome.json": BIOME,
   "src/a.ts": "export const a = 1;\n",
+};
+
+const SELF_RULES: Record<string, string> = {
+  ...WIRED,
+  "package.json": `${JSON.stringify({ name: "@agentvibes/guardrails", scripts: { lint: "guardrails verify-diff" } })}\n`,
+  // The canon's own rule dir and a rule fixture whose suppression is the point
+  // of the fixture: neither is a repo rule shadowing the canon or an override.
+  "sgconfig.yml": "ruleDirs:\n  - rules\n",
+  "rules/catch-empty.yml": "id: catch-empty\nlanguage: typescript\nrule:\n  pattern: x\n",
+  "rules/__fixtures__/catch-empty/good.ts":
+    "// ast-grep-ignore: catch-empty -- fixture for the suppression\nexport const g = 1;\n",
+};
+// The package's own root biome.json extends the preset source by path.
+const SELF: Record<string, string> = {
+  ...SELF_RULES,
+  "biome.json": `${JSON.stringify({ extends: ["./configs/biome.json"] })}\n`,
+  "configs/biome.json": readFileSync(join(packageRoot, "configs", "biome.json"), "utf8"),
 };
 
 interface Case {
@@ -106,6 +123,23 @@ const CASES: Case[] = [
     tree: { ...WIRED, "sgconfig.yml": "ruleDirs:\n  - rules\n" },
     state: "partial",
     failing: ["sgconfig-canon"],
+  },
+  {
+    // A checkout of this package scanned by a SEPARATE install (an installed copy
+    // run against another clone): recognised by its package name, not by path.
+    name: "a separate checkout of this package itself is on",
+    tree: SELF,
+    state: "on",
+    failing: [],
+  },
+  {
+    name: "the same tree under another package name is not exempt",
+    tree: {
+      ...SELF_RULES,
+      "package.json": `${JSON.stringify({ name: "not-guardrails", scripts: { lint: "guardrails verify-diff" } })}\n`,
+    },
+    state: "partial",
+    failing: ["installed", "sgconfig-canon"],
   },
 ];
 

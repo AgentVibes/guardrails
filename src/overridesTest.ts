@@ -133,6 +133,34 @@ function cli(dir: string, args: string[]): { status: number; out: string } {
   return { status: res.status ?? -1, out: res.stdout };
 }
 
+// Rule fixtures: skipped only in this package's own source. RED both ways: a
+// consumer's `rules/__fixtures__/` suppression is still an override, and the
+// package's own fixture suppression is not one.
+function fixtureScope(): void {
+  const fixture = {
+    "rules/__fixtures__/catch-empty/good.ts":
+      "// ast-grep-ignore: catch-empty -- fixture for the suppression\nexport const g = 1;\n",
+  };
+  for (const [name, counted] of [
+    ["a-consumer", true],
+    ["@agentvibes/guardrails", false],
+  ] as const) {
+    const dir = materialise({ ...fixture, "package.json": `${JSON.stringify({ name })}\n` });
+    try {
+      const seen = collectOverrides(dir).overrides.some(
+        (o) => o.file === "rules/__fixtures__/catch-empty/good.ts",
+      );
+      expect(
+        `a rule-fixture suppression in a repo named ${name} is ${counted ? "" : "not "}an override`,
+        seen === counted,
+        collectOverrides(dir).overrides,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+}
+
 function main(): number {
   const dir = materialise(TREE);
   try {
@@ -231,6 +259,7 @@ function main(): number {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+  fixtureScope();
   if (failed > 0) return 1;
   console.log("\noverrides inventory passed");
   return 0;

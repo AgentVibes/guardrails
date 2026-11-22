@@ -1,10 +1,10 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { match } from "ts-pattern";
 import { z } from "zod";
 import { OverrideConfigError } from "./overrideDeclarations.js";
 import { collectOverrides, type OverrideReport } from "./overrides.js";
-import { packageRoot } from "./packagePaths.js";
+import { isPackageSource, PACKAGE_NAME } from "./packagePaths.js";
 import { presetDrift } from "./presetDrift.js";
 import { declaredRuleDirs } from "./repoRules.js";
 
@@ -19,7 +19,7 @@ import { declaredRuleDirs } from "./repoRules.js";
 //   off     — guardrails is not installed and nothing else is wired either;
 //   partial — anything in between, including "fully wired, but overrides".
 
-export const PACKAGE_NAME = "@agentvibes/guardrails";
+export { PACKAGE_NAME };
 
 export const WIRING_CHECKS = [
   "installed",
@@ -83,7 +83,7 @@ function fail(id: WiringCheckId, detail: string): WiringCheck {
   return { id, status: "fail", detail };
 }
 
-const isSelf = (root: string): boolean => resolve(root) === resolve(packageRoot);
+const isSelf = isPackageSource;
 
 function checkInstalled(root: string, read: PackageRead): WiringCheck {
   if (isSelf(root)) return pass("installed", "this repo is the package itself");

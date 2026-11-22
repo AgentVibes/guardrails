@@ -1,12 +1,12 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { join, relative } from "node:path";
 import {
   findBiomeDeclaration,
   OverrideConfigError,
   type OverrideDeclaration,
   readOverrideDeclarations,
 } from "./overrideDeclarations.js";
-import { packageRoot } from "./packagePaths.js";
+import { isPackageSource } from "./packagePaths.js";
 import { TEST_PATH_GLOB } from "./testPaths.js";
 
 // Preset-drift guard. Consumers moved from 37 hand-rolled biome configs to
@@ -181,13 +181,14 @@ function extendsList(config: BiomeConfig): string[] {
 }
 
 /**
- * True when this repo IS the package that publishes the preset. Its root config
+ * True when this repo IS the package that publishes the preset (by name, so a
+ * checkout scanned by a separate install counts too). Its root config
  * extends `./configs/biome.json` by path (the specifier would resolve through
  * node_modules to itself), and `configs/biome.json` is the preset SOURCE, not a
  * competing config — so both are exempt from (a) and (c).
  */
 function isPresetSource(root: string): boolean {
-  return resolve(root) === resolve(packageRoot);
+  return isPackageSource(root);
 }
 
 /** Overrides that do more than turn `noConsole` off for some paths. */

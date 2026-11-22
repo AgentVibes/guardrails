@@ -25,6 +25,10 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          # `pnpm lint` runs `guardrails verify-diff`, which needs origin/main
+          # to find the merge base; a depth-1 clone has no such ref.
+          fetch-depth: 0
 
       # Installs the exact toolchain mise.toml pins (node, pnpm, ast-grep,
       # biome) — CI runs what every host runs.
