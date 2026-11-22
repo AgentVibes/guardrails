@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.1 (2026-11-22)
+
 - doctor, snapshot and verify recognise a checkout of this package by its
   package.json name (`@agentvibes/guardrails`), not only when it is the
   install that is running. Before, an installed copy run against a separate
