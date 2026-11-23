@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 import { join, relative } from "node:path";
 import { match } from "ts-pattern";
 import { AstGrepConfigError, scanFindings } from "./astGrep.js";
+import { canonFallbackNote } from "./canonFallback.js";
 import { FileSlocConfigError } from "./fileSlocBaseline.js";
 import { fileSlocFindings, type SizeScope } from "./fileSlocGate.js";
 import { type Finding, formatFinding, isRustFinding } from "./findings.js";
@@ -19,7 +20,7 @@ import { OverrideConfigError } from "./overrideDeclarations.js";
 import { collectOverrides } from "./overrides.js";
 import { ruleFixtureFilter, rulesConfig } from "./packagePaths.js";
 import { type RunCollector, recordLanguageFindings } from "./record/record.js";
-import { dedupeFindings, ruleConfigs } from "./repoRules.js";
+import { dedupeFindings, repoCanonFallback, ruleConfigs } from "./repoRules.js";
 import {
   dropScopeExempt,
   ScreenScopeError,
@@ -265,6 +266,10 @@ export function runVerifyDiff(base: string | undefined, json: boolean, run: RunC
   const { rungLabel, filesScanned, violations: gated, unavailable } = result;
   for (const u of unavailable)
     console.error(`guardrails verify-diff: ${u.language} UNAVAILABLE — ${u.reason}`);
+  if (hasLanguage(result.languages, "typescript") && filesScanned !== 0) {
+    const note = canonFallbackNote(repoCanonFallback(process.cwd()));
+    if (note !== undefined) console.error(`guardrails verify-diff: ${note}`);
+  }
   if (filesScanned === 0 && unavailable.length === 0) {
     const exts = result.languages.map((l) => (l === "rust" ? ".rs" : ".ts/.tsx")).join(" or ");
     report(json, rungLabel, 0, [], `no changed ${exts} files — nothing to gate`, []);

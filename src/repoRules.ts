@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { match } from "ts-pattern";
+import { type CanonFallback, canonFallback } from "./canonFallback.js";
 import { isPackageSource } from "./packagePaths.js";
 
 // Repo-local rules. `guardrails init` writes an `sgconfig.yml`
@@ -39,10 +41,25 @@ export function repoRuleConfig(cwd: string): string | undefined {
   return path;
 }
 
-/** Every ast-grep config `verify` should scan with, canon first. */
+/**
+ * Every ast-grep config `verify` should scan with, canon first. A repo config
+ * whose canon dirs under node_modules are not installed is replaced by a
+ * temporary copy pointing at the running package (canonFallback.ts); verify,
+ * verify-diff, the hooks and snapshot all scan through here, so they all get it.
+ */
 export function ruleConfigs(cwd: string, canon: string): string[] {
   const repo = repoRuleConfig(cwd);
-  return repo === undefined ? [canon] : [canon, repo];
+  if (repo === undefined) return [canon];
+  return match(canonFallback(cwd, repo))
+    .with({ kind: "none" }, () => [canon, repo])
+    .with({ kind: "used" }, (f) => [canon, f.config])
+    .exhaustive();
+}
+
+/** Whether ruleConfigs had to use the running package's canon for this repo. */
+export function repoCanonFallback(cwd: string): CanonFallback {
+  const repo = repoRuleConfig(cwd);
+  return repo === undefined ? { kind: "none" } : canonFallback(cwd, repo);
 }
 
 /**

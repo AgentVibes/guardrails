@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { match } from "ts-pattern";
+import { canonFallbackNote } from "./canonFallback.js";
 import type { Finding } from "./findings.js";
 import { hasLanguage, type LanguageId, resolveLanguages } from "./lang/languages.js";
 import { rustVerifyFindings } from "./lang/rust/rustFindings.js";
@@ -12,6 +13,7 @@ import { driftMessage, presetDrift } from "./presetDrift.js";
 import { type RunCollector, recordLanguageFindings, recordRun } from "./record/record.js";
 import { repoMetrics } from "./record/repoMetrics.js";
 import type { FindingsData, Part } from "./record/runRecord.js";
+import { repoCanonFallback } from "./repoRules.js";
 import { severityRaiseArgs } from "./severity.js";
 import { collectVerifyFindings } from "./verify.js";
 import { detectWiring } from "./wiring.js";
@@ -68,8 +70,11 @@ function measure(run: RunCollector): void {
 
 /**
  * Every enabled language's findings. A language that cannot be measured is
- * recorded per language with its reason (record.ts); the TypeScript part
- * keeps its old all-or-nothing rule (preset drift makes it unavailable).
+ * recorded per language with its reason (record.ts), TypeScript included, and
+ * the resolved languages are always recorded. The whole-run part keeps its
+ * old all-or-nothing rule: when TypeScript is unavailable (preset drift, a
+ * config ast-grep cannot load) the run's findings are unavailable with the
+ * TypeScript reason, even if Rust was measured.
  */
 function measureFindings(
   run: RunCollector,
@@ -84,33 +89,51 @@ function measureFindings(
         return collectVerifyFindings(["."], severityRaiseArgs(root), root);
       })
     : { status: "skipped" };
-  return match(ts)
-    .with({ status: "unavailable" }, (p): Part<FindingsData> => p)
-    .with({ status: "measured" }, { status: "skipped" }, (p): Part<FindingsData> => {
-      const code = p.status === "measured" ? p.data : [];
-      const list: Finding[] = [...code, ...(report?.findings ?? [])];
-      const counts: Partial<Record<LanguageId, number>> =
-        p.status === "measured" ? { typescript: code.length } : {};
-      const unavailable: { language: LanguageId; reason: string }[] = [];
-      if (hasLanguage(languages, "rust")) {
-        const rust = rustVerifyFindings(root, "snapshot");
-        list.push(
-          ...rust.findings.map((f) => ({
-            ...f,
-            file: relative(root, f.file).split(sep).join("/"),
-          })),
-        );
-        unavailable.push(
-          ...rust.unavailable.map((reason) => ({ language: "rust" as const, reason })),
-        );
-        if (rust.unavailable.length === 0) counts.rust = rust.findings.length;
-      }
-      run.findings = { status: "measured", scope: "full", data: { tiers: "all", list } };
-      // May turn the part unavailable when no language could be measured.
-      recordLanguageFindings(run, "full", { languages, counts, unavailable });
-      return run.findings;
-    })
+  const list: Finding[] = match(ts)
+    .with({ status: "measured" }, (p) => [...p.data])
+    .with({ status: "unavailable" }, { status: "skipped" }, () => [])
     .exhaustive();
+  const counts: Partial<Record<LanguageId, number>> = match(ts)
+    .with({ status: "measured" }, (p) => ({ typescript: p.data.length }))
+    .with({ status: "unavailable" }, { status: "skipped" }, () => ({}))
+    .exhaustive();
+  const unavailable: { language: LanguageId; reason: string }[] = match(ts)
+    .with({ status: "unavailable" }, (p) => [{ language: "typescript" as const, reason: p.reason }])
+    .with({ status: "measured" }, { status: "skipped" }, () => [])
+    .exhaustive();
+  list.push(...(report?.findings ?? []));
+  if (hasLanguage(languages, "rust")) {
+    const rust = rustVerifyFindings(root, "snapshot");
+    list.push(
+      ...rust.findings.map((f) => ({
+        ...f,
+        file: relative(root, f.file).split(sep).join("/"),
+      })),
+    );
+    unavailable.push(...rust.unavailable.map((reason) => ({ language: "rust" as const, reason })));
+    if (rust.unavailable.length === 0) counts.rust = rust.findings.length;
+  }
+  run.findings = { status: "measured", scope: "full", data: { tiers: "all", list } };
+  // May turn the part unavailable when no language could be measured.
+  recordLanguageFindings(run, "full", { languages, counts, unavailable });
+  // TypeScript unavailable: the whole-run part is the TypeScript part, as before.
+  run.findings = match(ts)
+    .with({ status: "unavailable" }, (p): Part<FindingsData> => p)
+    .with({ status: "measured" }, { status: "skipped" }, () => run.findings)
+    .exhaustive();
+  return run.findings;
+}
+
+/** Whether the TypeScript findings of this run were measured. */
+function typescriptMeasured(run: RunCollector): boolean {
+  return run.languageFindings.some(
+    (l) =>
+      l.language === "typescript" &&
+      match(l.part)
+        .with({ status: "measured" }, () => true)
+        .with({ status: "unavailable" }, { status: "skipped" }, () => false)
+        .exhaustive(),
+  );
 }
 
 function partLine<T>(name: string, part: Part<T>, summary: (data: T) => string): string {
@@ -143,6 +166,12 @@ export async function runSnapshot(
   process.chdir(root);
   run.root = root;
   measure(run);
+  // Said in the output: the findings came from the running package's canon,
+  // not from the version the repo would install (canonFallback.ts). Only when
+  // TypeScript was actually scanned: preset drift stops it before ast-grep.
+  const notes = typescriptMeasured(run)
+    ? [canonFallbackNote(repoCanonFallback(root))].filter((n): n is string => n !== undefined)
+    : [];
 
   const outcome = await recordRun(run, {
     command: "snapshot",
@@ -163,11 +192,15 @@ export async function runSnapshot(
     .with({ status: "recorded" }, (o) => {
       if (json) {
         console.log(
-          JSON.stringify({ command: "snapshot", root, db: o.db, runId: o.runId, parts }, null, 2),
+          JSON.stringify(
+            { command: "snapshot", root, db: o.db, runId: o.runId, parts, notes },
+            null,
+            2,
+          ),
         );
       } else {
         console.log(
-          `guardrails snapshot: ${root} → ${o.db} (run ${o.runId})\n  ${parts.join("\n  ")}`,
+          `guardrails snapshot: ${root} → ${o.db} (run ${o.runId})\n  ${[...parts, ...notes.map((n) => `note: ${n}`)].join("\n  ")}`,
         );
       }
       return 0;

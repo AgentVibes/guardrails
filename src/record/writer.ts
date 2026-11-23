@@ -221,6 +221,22 @@ function unavailableText(r: RunRecord): string | undefined {
   return lines.length === 0 ? undefined : lines.join("\n");
 }
 
+/**
+ * The run's findings were unavailable, and it looked at the whole checkout
+ * for every language it checked: what it says about the repo is current.
+ */
+function unavailableOverWholeRepo(r: RunRecord): boolean {
+  const unavailable = match(r.findings)
+    .with({ status: "unavailable" }, () => true)
+    .with({ status: "measured" }, { status: "skipped" }, () => false)
+    .exhaustive();
+  return (
+    unavailable &&
+    r.languageFindings.length > 0 &&
+    r.languageFindings.every((l) => l.scope === "full")
+  );
+}
+
 const SEVERITY_ORDER = { error: 0, warning: 1, info: 2, hint: 3 } as const;
 
 function insertHistory(db: DatabaseSync, r: RunRecord, repoId: number): number {
@@ -409,6 +425,14 @@ function refreshLatest(db: DatabaseSync, r: RunRecord, runId: number): void {
     for (const f of codeFindings(findings.list)) {
       row.run(r.repo.key, f.rule, f.severity, f.file, f.line, f.message, toolOf(f.source));
     }
+  }
+  if (unavailableOverWholeRepo(r)) {
+    // No count to store, but the dashboard must say the findings could not be
+    // measured. The counts and findings_latest keep the last measured run.
+    set({
+      findings_unavailable: v(unavailableText(r)),
+      ...(r.languages === undefined ? {} : { languages: v(languagesText(r)) }),
+    });
   }
 
   const overrides = fullData(r.overrides);

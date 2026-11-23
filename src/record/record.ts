@@ -1,9 +1,8 @@
-import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { match } from "ts-pattern";
 import type { LanguageId } from "../lang/languages.js";
 import type { Override } from "../overrides.js";
-import { packageRoot } from "../packagePaths.js";
+import { packageVersion } from "../packagePaths.js";
 import { resolvedVersion } from "../toolResolve.js";
 import type { WiringReport } from "../wiring.js";
 import { type RecordTarget, recordTarget } from "./config.js";
@@ -98,7 +97,7 @@ export function recordLanguageFindings(
         : count === undefined
           ? { status: "skipped" }
           : { status: "measured", scope, data: count };
-    return { language, part };
+    return { language, scope, part };
   });
   // Never zero for a language that did not run: when no language produced
   // findings at all (a Rust-only repo whose build fails), the run's findings
@@ -123,13 +122,6 @@ export type RecordOutcome =
   | { status: "off" }
   | { status: "recorded"; db: string; runId: number }
   | { status: "failed"; db: string | undefined; error: string };
-
-function guardrailsVersion(): string {
-  const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
-    version: string;
-  };
-  return pkg.version;
-}
 
 export interface RunMeta {
   command: string;
@@ -163,7 +155,7 @@ export async function recordRun(c: RunCollector, meta: RunMeta): Promise<RecordO
           durationMs: meta.durationMs,
           exitCode: meta.exitCode,
           tools: {
-            guardrails: guardrailsVersion(),
+            guardrails: packageVersion(),
             node: process.version,
             astGrep: resolvedVersion("ast-grep"),
             biome: resolvedVersion("biome"),

@@ -51,6 +51,8 @@ export interface ToolVersions {
 /** Whether one language's findings were measured, and how many: `unavailable` is never zero. */
 export interface LanguageFindings {
   language: LanguageId;
+  /** How much of the checkout the run looked at for this language, whatever came of it. */
+  scope: RunScope;
   part: Part<number>;
 }
 

@@ -1,5 +1,6 @@
 import { relative, resolve, sep } from "node:path";
 import { AstGrepConfigError, scanFindings } from "./astGrep.js";
+import { canonFallbackNote } from "./canonFallback.js";
 import { type Finding, formatFinding, hasErrors, isRustFinding } from "./findings.js";
 import { dropJsxSuppressed } from "./jsxSuppress.js";
 import { hasLanguage, type LanguageId, resolveLanguages } from "./lang/languages.js";
@@ -9,7 +10,8 @@ import { collectOverrides, type Override } from "./overrides.js";
 import { rulesConfig } from "./packagePaths.js";
 import { driftMessage, presetDrift } from "./presetDrift.js";
 import { type RunCollector, recordLanguageFindings, scopeOf } from "./record/record.js";
-import { dedupeFindings, ruleConfigs } from "./repoRules.js";
+import type { RunScope } from "./record/runRecord.js";
+import { dedupeFindings, repoCanonFallback, ruleConfigs } from "./repoRules.js";
 import {
   dropScopeExempt,
   ScreenScopeError,
@@ -57,6 +59,26 @@ function rustUnder(cwd: string, paths: readonly string[], findings: Finding[]): 
     .map((f) => ({ ...f, file: relative(cwd, f.file).split(sep).join("/") }));
 }
 
+/**
+ * Records the languages and a TypeScript part that could not be measured, so a
+ * run that stops before scanning still says which languages it would check.
+ * The whole-run findings part is set by the caller and keeps its meaning.
+ */
+function typescriptUnavailable(
+  run: RunCollector,
+  scope: RunScope,
+  languages: LanguageId[],
+  reason: string,
+): void {
+  const findings = run.findings;
+  recordLanguageFindings(run, scope, {
+    languages,
+    counts: {},
+    unavailable: [{ language: "typescript", reason }],
+  });
+  run.findings = findings;
+}
+
 export function runVerify(targets: string[], json: boolean, run: RunCollector): number {
   const paths = targets.length > 0 ? targets : ["."];
   const scope = scopeOf(paths);
@@ -78,6 +100,7 @@ export function runVerify(targets: string[], json: boolean, run: RunCollector): 
   const drift = typescript ? presetDrift(process.cwd()) : [];
   if (drift.length > 0) {
     run.findings = { status: "unavailable", reason: driftMessage(drift) };
+    typescriptUnavailable(run, scope, languages, driftMessage(drift));
     // Drift is exactly when wiring_preset must read 0, so wiring is still measured.
     if (run.recording)
       run.wiring = { status: "measured", scope: "full", data: detectWiring(process.cwd()) };
@@ -128,10 +151,16 @@ export function runVerify(targets: string[], json: boolean, run: RunCollector): 
       err instanceof AstGrepConfigError
     ) {
       run.findings = { status: "unavailable", reason: err.message };
+      if (err instanceof AstGrepConfigError)
+        typescriptUnavailable(run, scope, languages, err.message);
       console.error(`guardrails verify: ${err.message}`);
       return 2;
     }
     throw err;
+  }
+  if (typescript) {
+    const note = canonFallbackNote(repoCanonFallback(process.cwd()));
+    if (note !== undefined) console.error(`guardrails verify: ${note}`);
   }
   const errors = findings.filter((f) => f.severity === "error").length;
   const warnings = findings.filter((f) => f.severity === "warning").length;

@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **A checkout without `node_modules` is scanned with the running
+  package's rules.** A wired repo's `sgconfig.yml` lists
+  `node_modules/@agentvibes/guardrails/rules`. In a checkout where
+  dependencies are not installed (a fresh worktree), that dir is missing and
+  ast-grep exited 6, so the findings were `unavailable`. Now `verify`,
+  `verify-diff`, `snapshot` and the hooks scan with a temporary copy of the
+  config that points that dir at the rules of the guardrails install that is
+  running. The repo's file is not changed. `snapshot` prints a note (and a
+  `notes` array in `--json`) that names the dir and the running version;
+  `verify` and `verify-diff` print the same note on stderr. The version is
+  `runs.guardrails_version`, as for every run. A missing dir that is not
+  under `node_modules/@agentvibes/guardrails/` still fails as before.
+- **`snapshot` records the languages when the findings are unavailable.**
+  `runs.languages` and `projects_latest.languages` were NULL when the
+  TypeScript findings could not be measured. `verify` now records them too
+  when it stops on preset drift or a config ast-grep cannot load.
+- **A TypeScript findings failure is recorded per language**, like a Rust
+  one: a `run_parts` row with `language = 'typescript'`, status
+  `unavailable` and the reason. `projects_latest.findings_unavailable` now
+  shows it (`typescript: <reason>`) for a run over the whole checkout; the
+  error and warning counts keep the last measured run. The whole-run row
+  (`language IS NULL`) is unchanged: still `unavailable` with the TypeScript
+  reason.
+
 ## 0.4.1 (2026-11-24)
 
 - **The agent hooks do nothing in a checkout without an install.** The hook
