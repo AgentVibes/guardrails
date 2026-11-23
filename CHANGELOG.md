@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.1 (2026-11-24)
+
 - **The agent hooks do nothing in a checkout without an install.** The hook
   command `guardrails init` writes now checks that the package is installed
   (`node_modules/.bin/guardrails` under `$CLAUDE_PROJECT_DIR`) and exits 0
