@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { match } from "ts-pattern";
 import { z } from "zod";
+import { isUnguardedHook, upgradeHint } from "./claudeHooks.js";
 import { hasLanguage, type LanguageId, languagesOrDetected } from "./lang/languages.js";
 import {
   NEUTRAL_RUST_CHECKS,
@@ -54,6 +55,8 @@ export interface WiringCheck {
   status: "pass" | "fail";
   /** The evidence: what was found, or what is missing and where it was looked for. */
   detail: string;
+  /** A passing check that still has a better form (an unguarded hook command). */
+  hint?: string;
 }
 
 export type WiringState = "off" | "partial" | "on";
@@ -272,9 +275,10 @@ function checkHook(
       const cmd = (r.byEvent.get(event) ?? []).find(
         (c) => /guardrails\b/.test(c) && c.includes(id),
       );
-      return cmd === undefined
-        ? fail(id, `.claude/settings.json has no ${event} hook running guardrails ${id}`)
-        : pass(id, `${event}: ${cmd}`);
+      if (cmd === undefined)
+        return fail(id, `.claude/settings.json has no ${event} hook running guardrails ${id}`);
+      const ok = pass(id, `${event}: ${cmd}`);
+      return isUnguardedHook(cmd, id) ? { ...ok, hint: upgradeHint() } : ok;
     })
     .exhaustive();
 }

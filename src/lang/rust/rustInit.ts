@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { match } from "ts-pattern";
-import { z } from "zod";
+import { writeClaudeHooks } from "../../claudeHooks.js";
 import { packageRoot } from "../../packagePaths.js";
 import { type CargoRoot, cargoRoots, type Manifest } from "./cargoManifest.js";
 import { CANON_PATH } from "./lintTable.js";
@@ -17,11 +17,12 @@ import { governingLints } from "./rustWiring.js";
 //   - `[lints] workspace = true` in every workspace crate without [lints];
 //   - rust-toolchain.toml (the installed stable version, clippy + rustfmt);
 //   - clippy.toml (unwrap/expect/panic allowed in tests);
-//   - the PostToolUse and Stop hooks in .claude/settings.json.
+//   - the PostToolUse and Stop hooks in .claude/settings.json (claudeHooks.ts),
+//     and an old unguarded hook command rewritten to the guarded form.
 
 export interface RustInitAction {
   file: string;
-  action: "created" | "appended" | "skipped-exists" | "skipped-unreadable";
+  action: "created" | "appended" | "upgraded" | "skipped-exists" | "skipped-unreadable";
   detail?: string;
 }
 
@@ -133,68 +134,8 @@ function clippyConfig(r: CargoRoot): RustInitAction {
   return { file: rootRel(r, "clippy.toml"), action: "created" };
 }
 
-/** How the hook calls guardrails: through the repo's package manager, or from PATH when there is none. */
-export function hookCommand(root: string, sub: "hook-postedit" | "hook-stop"): string {
-  if (existsSync(join(root, "pnpm-lock.yaml"))) return `pnpm exec guardrails ${sub}`;
-  if (existsSync(join(root, "yarn.lock"))) return `yarn guardrails ${sub}`;
-  if (existsSync(join(root, "package-lock.json"))) return `npx --no-install guardrails ${sub}`;
-  // No Node project: guardrails is installed globally. A machine without it
-  // must not fail the edit, so the hook is a no-op there.
-  return `sh -c 'command -v guardrails >/dev/null 2>&1 || exit 0; exec guardrails ${sub}'`;
-}
-
-const HookCommand = z.object({ type: z.string(), command: z.string() }).loose();
-const HookEntry = z.object({ hooks: z.array(HookCommand).default([]) }).loose();
-const Settings = z.object({ hooks: z.record(z.string(), z.array(HookEntry)).default({}) }).loose();
-
-const HOOKS = [
-  { event: "PostToolUse", sub: "hook-postedit", matcher: "Edit|Write|MultiEdit", timeout: 120 },
-  { event: "Stop", sub: "hook-stop", matcher: undefined, timeout: 360 },
-] as const;
-
 function claudeHooks(root: string): RustInitAction {
-  const file = ".claude/settings.json";
-  const path = join(root, ".claude", "settings.json");
-  let raw: unknown = {};
-  if (existsSync(path)) {
-    try {
-      raw = JSON.parse(readFileSync(path, "utf8"));
-    } catch (err) {
-      return {
-        file,
-        action: "skipped-unreadable",
-        detail: (err as Error).message.split("\n")[0] ?? "invalid JSON",
-      };
-    }
-  }
-  const parsed = Settings.safeParse(raw);
-  if (!parsed.success)
-    return {
-      file,
-      action: "skipped-unreadable",
-      detail: parsed.error.issues[0]?.message ?? "invalid",
-    };
-  const settings = parsed.data;
-  const added: string[] = [];
-  for (const h of HOOKS) {
-    const entries = settings.hooks[h.event] ?? [];
-    const present = entries.some((e) =>
-      e.hooks.some((c) => /guardrails\b/.test(c.command) && c.command.includes(h.sub)),
-    );
-    if (present) continue;
-    entries.push({
-      ...(h.matcher === undefined ? {} : { matcher: h.matcher }),
-      hooks: [{ type: "command", command: hookCommand(root, h.sub), timeout: h.timeout }],
-    });
-    settings.hooks[h.event] = entries;
-    added.push(h.event);
-  }
-  if (added.length === 0)
-    return { file, action: "skipped-exists", detail: "both guardrails hooks are set" };
-  mkdirSync(join(root, ".claude"), { recursive: true });
-  const existed = existsSync(path);
-  writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
-  return { file, action: existed ? "appended" : "created", detail: `${added.join(" + ")} hook(s)` };
+  return writeClaudeHooks(root, "add");
 }
 
 export function rustInit(root: string): RustInitAction[] {

@@ -168,6 +168,44 @@ git add gateRedTeam.ts && git commit -m "red-team the guardrails gate" && git pu
 
 A gate that has never been seen red proves nothing — do not skip this.
 
+## Agent hooks
+
+guardrails has two Claude Code hooks: `hook-postedit` after every edit and
+`hook-stop` when the agent wants to stop (both below). They live in the
+repo's `.claude/settings.json`, so they also run in a checkout where nobody
+ran `pnpm install` yet, such as a fresh worktree. A bare
+`pnpm exec guardrails hook-postedit` fails there with "command not found",
+and the agent sees that error after every edit.
+
+So each command first checks that the package is installed, and exits 0
+without output when it is not. This is the form `guardrails init` writes in
+a pnpm repo:
+
+```json
+{ "hooks": {
+  "PostToolUse": [ { "matcher": "Edit|Write|MultiEdit", "hooks": [{ "type": "command", "timeout": 120,
+    "command": "sh -c '[ -x \"${CLAUDE_PROJECT_DIR:-.}/node_modules/.bin/guardrails\" ] || exit 0; exec pnpm exec guardrails hook-postedit'" }] } ],
+  "Stop": [ { "hooks": [{ "type": "command", "timeout": 360,
+    "command": "sh -c '[ -x \"${CLAUDE_PROJECT_DIR:-.}/node_modules/.bin/guardrails\" ] || exit 0; exec pnpm exec guardrails hook-stop'" }] } ] } }
+```
+
+The check reads `$CLAUDE_PROJECT_DIR` (Claude Code sets it to the project
+root), or the current directory when it is not set. With a
+`package-lock.json` the command runs `npx --no-install guardrails`; with a
+`yarn.lock` it runs `yarn guardrails`, and an install state in
+`.yarn/install-state.gz` (Plug'n'Play) also counts as installed. In a repo
+without a lockfile it runs a `guardrails` found on `PATH`, and does nothing
+when there is none.
+
+**Upgrade.** `guardrails init` rewrites a hook in the old form
+(`pnpm exec guardrails hook-…`, `yarn guardrails hook-…`,
+`npx [--no-install] guardrails hook-…`, nothing else in the command) to the
+form above, in any repo. It keeps the matcher, timeout and all other
+settings, and leaves any other command alone, including one behind a wrapper.
+`doctor` still passes the old form, with an `upgrade:` line under the check.
+In a Rust repo `init` also adds a hook that is missing; in a TypeScript-only
+repo it adds none.
+
 ## Stop hook
 
 `guardrails hook-stop` is the "cannot say done over red findings" echelon: on
@@ -179,10 +217,7 @@ instead — a wedged agent is worse than undercleaned code, and CI holds the
 same line anyway. Like hook-postedit, it never fails the session on its own
 defects.
 
-```json
-{ "hooks": { "Stop": [ { "hooks": [{ "type": "command",
-  "command": "pnpm exec guardrails hook-stop" }] } ] } }
-```
+Wire it with the command from [Agent hooks](#agent-hooks).
 
 For a USER-level install (synced settings.json, per-machine tools), route
 both hooks through an opt-hook.sh-style wrapper that no-ops when the tool is
@@ -214,12 +249,8 @@ hook JSON on stdin, and for an Edit/Write of a .ts/.tsx file scans just that
 file, gating the lines the edit actually changed (merge-base ladder; Write,
 untracked files, and unresolvable bases degrade to whole-file — never to
 silence). Error-tier findings emit a blocking decision, warnings attach as
-context. Wire it in settings.json:
-
-```json
-{ "hooks": { "PostToolUse": [ { "matcher": "Edit|Write",
-  "hooks": [{ "type": "command", "command": "pnpm exec guardrails hook-postedit" }] } ] } }
-```
+context. Wire it in settings.json with the command from
+[Agent hooks](#agent-hooks).
 
 ## Leak gate
 
@@ -342,7 +373,7 @@ code, `detectWiring(root)` from `@agentvibes/guardrails/wiring`):
 | `sgconfig-canon` | `sgconfig.yml` `ruleDirs` lists `node_modules/@agentvibes/guardrails/rules`, so editors and bare `ast-grep` runs see the canon |
 | `lint-script` | the `lint` or `check` script runs `guardrails verify\|verify-diff\|doctor\|metrics\|leaks`, directly, through one other package script, or through one file it runs (`scripts/lint/gate.sh`) |
 | `ci` | a file in `.github/workflows`, `.gitea/workflows` or `.gitlab-ci.yml` uses the reusable gate, runs guardrails, or runs the lint script that passed above |
-| `hook-postedit` | `.claude/settings.json` has a `PostToolUse` hook whose command runs `guardrails hook-postedit`, through any wrapper |
+| `hook-postedit` | `.claude/settings.json` has a `PostToolUse` hook whose command runs `guardrails hook-postedit`, through any wrapper; the old form without the install check passes with an `upgrade:` hint ([Agent hooks](#agent-hooks)) |
 | `hook-stop` | the same for a `Stop` hook and `guardrails hook-stop` |
 | `preset` | no undeclared biome preset drift |
 

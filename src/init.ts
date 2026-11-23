@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { type HookAction, writeClaudeHooks } from "./claudeHooks.js";
 import { hasLanguage, languagesOrDetected } from "./lang/languages.js";
 import { type RustInitAction, rustInit } from "./lang/rust/rustInit.js";
 import { listWorkspacePackages } from "./workspaces.js";
@@ -20,7 +21,7 @@ interface Stack {
 
 interface Action {
   file: string;
-  action: "created" | "appended" | "skipped-exists";
+  action: "created" | "appended" | "upgraded" | "skipped-exists";
 }
 
 /** Per-package detection signals; a package with none contributes nothing. */
@@ -191,6 +192,13 @@ export function runInit(json: boolean): number {
   } else {
     appendFileSync(tomlPath, `\n${stackToml(detected)}`);
     actions.push({ file: ".agentvibes/project.toml", action: "appended" });
+  }
+
+  // Rust repos get the hooks from rustInit. Elsewhere init does not add hooks,
+  // but rewrites a guardrails hook still in the old unguarded form.
+  if (!hasLanguage(languages, "rust")) {
+    const hooks: HookAction = writeClaudeHooks(cwd, "upgrade-only");
+    if (hooks.action === "upgraded") actions.push({ file: hooks.file, action: "upgraded" });
   }
 
   if (json) {

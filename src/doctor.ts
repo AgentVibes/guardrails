@@ -247,8 +247,10 @@ function printOverrides(read: OverridesRead): void {
 
 function printWiring(w: WiringReport): void {
   console.log(`wiring        ${w.state.toUpperCase()}`);
-  for (const c of w.checks)
+  for (const c of w.checks) {
     console.log(`  ${c.status === "pass" ? "ok  " : "MISS"} ${c.id.padEnd(20)} ${c.detail}`);
+    if (c.hint !== undefined) console.log(`       ${"".padEnd(20)} ${c.hint}`);
+  }
   match(w.overrides)
     .with({ status: "counted" }, (o) => {
       if (o.total > 0) console.log(`  (${o.total} override(s) of the canon keep it from ON)`);

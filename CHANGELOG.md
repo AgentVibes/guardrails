@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **The agent hooks do nothing in a checkout without an install.** The hook
+  command `guardrails init` writes now checks that the package is installed
+  (`node_modules/.bin/guardrails` under `$CLAUDE_PROJECT_DIR`) and exits 0
+  without output when it is not, so a fresh worktree no longer shows the
+  agent a "command not found" error after every edit. README "Agent hooks".
+- `init` rewrites a hook in the old form (`pnpm exec guardrails hook-…` and
+  the yarn and npx variants) to the new one, in any repo, and keeps the rest
+  of `.claude/settings.json`. A wrapped command is left as it is.
+- `doctor` passes both forms. For the old form it prints an `upgrade:` line
+  under the `hook-postedit` or `hook-stop` check, and `doctor --json` has a
+  `hint` field on that check.
+
 ## 0.4.0 (2026-11-22)
 
 - Languages. guardrails runs one adapter per language: `typescript`

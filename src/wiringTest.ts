@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { hookCommand } from "./claudeHooks.js";
 import { packageRoot } from "./packagePaths.js";
 import { detectWiring, type WiringCheckId, type WiringState } from "./wiring.js";
 
@@ -62,7 +63,16 @@ interface Case {
   tree: Record<string, string>;
   state: WiringState;
   failing: WiringCheckId[];
+  /** When set: exactly these checks pass with an upgrade hint (the old unguarded hook form). */
+  hinted?: WiringCheckId[];
 }
+
+// The guarded form init writes now (claudeHooks.ts), for a pnpm repo.
+const GUARDED_ROOT = mkdtempSync(join(tmpdir(), "guardrails-wiring-lock-"));
+writeFileSync(join(GUARDED_ROOT, "pnpm-lock.yaml"), "");
+const GUARDED_POST = hookCommand(GUARDED_ROOT, "hook-postedit");
+const GUARDED_STOP = hookCommand(GUARDED_ROOT, "hook-stop");
+rmSync(GUARDED_ROOT, { recursive: true, force: true });
 
 const CASES: Case[] = [
   {
@@ -71,7 +81,27 @@ const CASES: Case[] = [
     state: "off",
     failing: ["installed", "sgconfig-canon", "lint-script", "ci", "hook-postedit", "hook-stop"],
   },
-  { name: "everything wired and no override is on", tree: WIRED, state: "on", failing: [] },
+  {
+    name: "everything wired and no override is on; the old hook form passes with a hint",
+    tree: WIRED,
+    state: "on",
+    failing: [],
+    hinted: ["hook-postedit", "hook-stop"],
+  },
+  {
+    name: "the guarded hook form init writes is on, with no hint",
+    tree: { ...WIRED, ".claude/settings.json": HOOKS(GUARDED_POST, GUARDED_STOP) },
+    state: "on",
+    failing: [],
+    hinted: [],
+  },
+  {
+    name: "one old and one guarded hook: only the old one is hinted",
+    tree: { ...WIRED, ".claude/settings.json": HOOKS(GUARDED_POST, "npx guardrails hook-stop") },
+    state: "on",
+    failing: [],
+    hinted: ["hook-stop"],
+  },
   {
     name: "wired but one reasoned suppression is partial",
     tree: {
@@ -105,6 +135,8 @@ const CASES: Case[] = [
     state: "partial",
     // `lint` → `lint:logic` → gate.sh is two levels; the detector follows one.
     failing: ["lint-script", "ci"],
+    // A wrapper (opt-hook.sh) does its own no-op; it is not the old form.
+    hinted: [],
   },
   {
     name: "lint one level into a script file, CI through pnpm run lint",
@@ -159,18 +191,31 @@ function main(): number {
     try {
       const w = detectWiring(dir);
       const failing = w.checks.filter((x) => x.status === "fail").map((x) => x.id);
-      const ok = w.state === c.state && JSON.stringify(failing) === JSON.stringify(c.failing);
+      const hinted = w.checks.filter((x) => x.hint !== undefined).map((x) => x.id);
       const doctor = spawnSync("node", [join(packageRoot, "dist", "cli.js"), "doctor", "--json"], {
         cwd: dir,
         encoding: "utf8",
       });
-      const fromDoctor = (JSON.parse(doctor.stdout) as { wiring: { state: string } }).wiring.state;
+      const doctorWiring = (
+        JSON.parse(doctor.stdout) as {
+          wiring: { state: string; checks: { id: string; hint?: string }[] };
+        }
+      ).wiring;
+      const fromDoctor = doctorWiring.state;
+      const doctorHinted = doctorWiring.checks.filter((x) => x.hint !== undefined).map((x) => x.id);
+      // doctor --json carries the same hints as detectWiring.
+      const hintsOk =
+        c.hinted === undefined ||
+        (JSON.stringify(hinted) === JSON.stringify(c.hinted) &&
+          JSON.stringify(doctorHinted) === JSON.stringify(c.hinted));
+      const ok =
+        hintsOk && w.state === c.state && JSON.stringify(failing) === JSON.stringify(c.failing);
       // doctor's exit code is the tools + drift verdict only; none of these trees drift.
       const exitOk = doctor.status === 0;
       if (!ok || fromDoctor !== c.state || !exitOk) {
         failed += 1;
         console.error(
-          `FAIL wiring: ${c.name}\n  state ${w.state} (doctor ${fromDoctor}, exit ${doctor.status}), want ${c.state}\n  failing ${JSON.stringify(failing)}, want ${JSON.stringify(c.failing)}\n${JSON.stringify(w.checks, null, 2)}`,
+          `FAIL wiring: ${c.name}\n  hinted ${JSON.stringify(hinted)}, want ${JSON.stringify(c.hinted)}\n  state ${w.state} (doctor ${fromDoctor}, exit ${doctor.status}), want ${c.state}\n  failing ${JSON.stringify(failing)}, want ${JSON.stringify(c.failing)}\n${JSON.stringify(w.checks, null, 2)}`,
         );
         continue;
       }
