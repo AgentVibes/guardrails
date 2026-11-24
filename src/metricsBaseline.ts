@@ -32,27 +32,57 @@ export interface Regression {
   current: number;
 }
 
+/**
+ * A gated value in a baseline file must be a finite number. A key may be
+ * absent (the file predates the metric), but a present key holding anything
+ * else is a broken file, not a metric to skip.
+ */
+function gatedShapeOk(gated: unknown): gated is Partial<GatedMetrics> {
+  if (typeof gated !== "object" || gated === null || Array.isArray(gated)) return false;
+  const g = gated as Record<string, unknown>;
+  return GATED_KEYS.every((k) => g[k] === undefined || Number.isFinite(g[k]));
+}
+
 export function readBaseline(path: string): Baseline | undefined {
   if (!existsSync(path)) return undefined;
-  const parsed = JSON.parse(readFileSync(path, "utf8")) as Baseline;
-  if (parsed.version !== 1 || typeof parsed.gated !== "object") {
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as { version?: unknown; gated?: unknown };
+  if (parsed.version !== 1 || !gatedShapeOk(parsed.gated)) {
     throw new Error(
       `baseline at ${path} has an unrecognised shape — regenerate with --update-baseline --force`,
     );
   }
-  return parsed;
+  return parsed as Baseline;
 }
 
-export function checkAgainstBaseline(current: GatedMetrics, baseline: GatedMetrics): Regression[] {
+export interface CheckResult {
+  regressions: Regression[];
+  /**
+   * Gated metrics the baseline has no entry for: the file was written by a
+   * release that did not gate them yet. They are reported, not failed.
+   * Reading a missing entry as 0 would turn every such repo red the day it
+   * upgrades. `--update-baseline` adopts their current value.
+   */
+  notYetGated: (keyof GatedMetrics)[];
+}
+
+export function checkAgainstBaseline(
+  current: GatedMetrics,
+  baseline: Partial<GatedMetrics>,
+): CheckResult {
   const regressions: Regression[] = [];
+  const notYetGated: (keyof GatedMetrics)[] = [];
   for (const key of GATED_KEYS) {
-    const base = baseline[key] ?? 0;
+    const base = baseline[key];
+    if (base === undefined) {
+      notYetGated.push(key);
+      continue;
+    }
     const cur = current[key];
     if (cur > base + EPS + Math.abs(base) * EPS) {
       regressions.push({ metric: key, baseline: base, current: cur });
     }
   }
-  return regressions;
+  return { regressions, notYetGated };
 }
 
 export interface UpdateResult {
@@ -62,10 +92,12 @@ export interface UpdateResult {
   withinHysteresis: (keyof GatedMetrics)[];
   /** currently worse than baseline — kept the old ceiling (no silent loosening) */
   worse: (keyof GatedMetrics)[];
+  /** absent from the old baseline (gated since a later release) — set to the current value */
+  adopted: (keyof GatedMetrics)[];
 }
 
 export function updateGated(
-  old: GatedMetrics | undefined,
+  old: Partial<GatedMetrics> | undefined,
   current: GatedMetrics,
   force: boolean,
 ): UpdateResult {
@@ -75,15 +107,22 @@ export function updateGated(
       tightened: force ? [] : GATED_KEYS,
       withinHysteresis: [],
       worse: [],
+      adopted: [],
     };
   }
-  const next = { ...old };
+  const next: GatedMetrics = { ...current, ...old };
   const tightened: (keyof GatedMetrics)[] = [];
   const withinHysteresis: (keyof GatedMetrics)[] = [];
   const worse: (keyof GatedMetrics)[] = [];
+  const adopted: (keyof GatedMetrics)[] = [];
   for (const key of GATED_KEYS) {
-    const base = old[key] ?? 0;
+    const base = old[key];
     const cur = current[key];
+    if (base === undefined) {
+      next[key] = cur;
+      adopted.push(key);
+      continue;
+    }
     if (cur < base * (1 - HYSTERESIS) - EPS) {
       next[key] = cur;
       tightened.push(key);
@@ -93,7 +132,7 @@ export function updateGated(
       withinHysteresis.push(key);
     }
   }
-  return { next, tightened, withinHysteresis, worse };
+  return { next, tightened, withinHysteresis, worse, adopted };
 }
 
 export function writeBaseline(
