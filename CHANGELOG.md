@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`verify` and `snapshot` of this package's own checkout skip
+  `rules/__fixtures__/`.** Those files are the examples each rule's test runs
+  on, and `bad.ts` violates on purpose. `verify-diff` already skipped them;
+  the full scan counted them, so a snapshot of this repo recorded 162 errors
+  that were all fixtures. The checkout is recognised by its package name, as
+  `doctor` does. In any other repo, `rules/__fixtures__/` is scanned as before.
+
 ## 0.4.2 (2026-11-24)
 
 - **A checkout without `node_modules` is scanned with the running

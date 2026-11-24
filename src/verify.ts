@@ -7,7 +7,7 @@ import { hasLanguage, type LanguageId, resolveLanguages } from "./lang/languages
 import { rustVerifyFindings } from "./lang/rust/rustFindings.js";
 import { OverrideConfigError } from "./overrideDeclarations.js";
 import { collectOverrides, type Override } from "./overrides.js";
-import { rulesConfig } from "./packagePaths.js";
+import { ruleFixtureFilter, rulesConfig } from "./packagePaths.js";
 import { driftMessage, presetDrift } from "./presetDrift.js";
 import { type RunCollector, recordLanguageFindings, scopeOf } from "./record/record.js";
 import type { RunScope } from "./record/runRecord.js";
@@ -43,10 +43,14 @@ export function collectVerifyFindings(
   // by `verify-diff` on the same line.
   // JSX-form suppressions last: they are a per-line exemption like ast-grep's
   // own, and must not change which rules a scope stands down.
+  // In this package's own source, `rules/__fixtures__/` holds the examples the
+  // rule tests run on; `bad.ts` violates on purpose. They are not the repo's
+  // code, so the full scan skips them as verify-diff does. Consumers: no-op.
+  const isRuleFixture = ruleFixtureFilter(cwd);
   return dropJsxSuppressed(
     dropScopeExempt(findings, scopePatterns(cwd), scopeExemptRuleIds()),
     cwd,
-  );
+  ).filter((f) => !isRuleFixture(f.file));
 }
 
 /** Rust findings under `paths`, with paths relative to cwd like the TypeScript ones. */
