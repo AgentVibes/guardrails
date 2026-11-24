@@ -264,7 +264,10 @@ function brokenSetupCases(): void {
     )[0]?.reason;
     check(
       "the whole-run part keeps the ast-grep reason, not a per-language one",
-      typeof reason === "string" && /^ast-grep exited 6/.test(reason),
+      typeof reason === "string" &&
+        /^ast-grep exited 6/.test(reason) &&
+        reason.includes(`${dir}/sgconfig.yml`) &&
+        !reason.includes("guardrails-sgconfig-"),
       String(reason),
     );
     const run = rows(db, "SELECT languages FROM runs")[0];
@@ -289,6 +292,28 @@ function brokenSetupCases(): void {
       String(p?.findings_unavailable),
     );
     check("no fallback note for a repo-local dir", !/scanned with the rules/.test(res.stdout));
+    // A run over some paths records its languages and the TypeScript row, but
+    // says nothing about the whole repo: projects_latest is not refreshed.
+    const paths = join(state, "paths.sqlite");
+    const v = spawnSync("node", [CLI, "verify", "src"], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { ...process.env, GUARDRAILS_RECORD: paths },
+    });
+    const vr = rows(paths, "SELECT languages FROM runs")[0];
+    const vts = rows(
+      paths,
+      "SELECT status FROM run_parts WHERE part = 'findings' AND language = 'typescript'",
+    )[0];
+    const vp = rows(paths, "SELECT findings_unavailable FROM projects_latest")[0];
+    check(
+      "verify on a path records languages and the TypeScript failure, not projects_latest",
+      v.status === 2 &&
+        vr?.languages === "typescript" &&
+        vts?.status === "unavailable" &&
+        vp?.findings_unavailable === null,
+      `${v.status} ${JSON.stringify([vr, vts, vp])} ${v.stderr}`,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });

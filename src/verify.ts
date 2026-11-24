@@ -151,7 +151,8 @@ export function runVerify(targets: string[], json: boolean, run: RunCollector): 
       err instanceof AstGrepConfigError
     ) {
       run.findings = { status: "unavailable", reason: err.message };
-      if (err instanceof AstGrepConfigError)
+      // These come from the TypeScript scan; an [[override]] table is not per language.
+      if (!(err instanceof OverrideConfigError))
         typescriptUnavailable(run, scope, languages, err.message);
       console.error(`guardrails verify: ${err.message}`);
       return 2;

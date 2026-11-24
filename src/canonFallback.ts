@@ -14,9 +14,10 @@ import { PACKAGE_NAME, packageRoot, packageVersion } from "./packagePaths.js";
 // package, and the command says it did (canonFallbackNote).
 //
 // Only a missing dir under node_modules/@agentvibes/guardrails/ is remapped,
-// and only when the running package has the same subdirectory. Any other
-// missing dir is left as written, so ast-grep still fails on it and the
-// AstGrepConfigError reports it. The repo's file is never edited, and the
+// and only when the running package has the same subdirectory. When any
+// other listed dir is missing too, no copy is made: the repo config is
+// scanned as written, ast-grep fails on it and the AstGrepConfigError names
+// the repo's own sgconfig.yml. The repo's file is never edited, and the
 // temporary copy lives outside the repo (snapshot writes nothing there).
 
 const CANON_PREFIX = `node_modules/${PACKAGE_NAME}/`;
@@ -56,8 +57,12 @@ function rewriteItem(cwd: string, dir: string): { path: string; remapped: boolea
  * missing canon dirs pointed at the running package. A line reader, like
  * declaredRuleDirs: the config shape the stub writes is a block list.
  */
-function rewriteConfig(cwd: string, text: string): { text: string; missing: string[] } {
+function rewriteConfig(
+  cwd: string,
+  text: string,
+): { text: string; missing: string[]; unresolved: string[] } {
   const missing: string[] = [];
+  const unresolved: string[] = [];
   let inList = false;
   const lines = text.split("\n").map((line) => {
     const key = /^([A-Za-z]+):/.exec(line)?.[1];
@@ -71,9 +76,10 @@ function rewriteConfig(cwd: string, text: string): { text: string; missing: stri
     if (lead === undefined || dir === undefined || dir.startsWith("#")) return line;
     const out = rewriteItem(cwd, dir);
     if (out.remapped) missing.push(dir);
+    if (!existsSync(out.path)) unresolved.push(dir);
     return `${lead}${JSON.stringify(out.path)}`;
   });
-  return { text: lines.join("\n"), missing };
+  return { text: lines.join("\n"), missing, unresolved };
 }
 
 const made = new Map<string, CanonFallback>();
@@ -90,9 +96,11 @@ process.on("exit", () => {
 export function canonFallback(cwd: string, configPath: string): CanonFallback {
   const cached = made.get(configPath);
   if (cached !== undefined) return cached;
-  const { text, missing } = rewriteConfig(cwd, readFileSync(configPath, "utf8"));
+  const { text, missing, unresolved } = rewriteConfig(cwd, readFileSync(configPath, "utf8"));
+  // A dir the fallback cannot supply leaves the repo config as it is, so the
+  // ast-grep failure names the repo's own sgconfig.yml, as before.
   const result: CanonFallback =
-    missing.length === 0
+    missing.length === 0 || unresolved.length > 0
       ? { kind: "none" }
       : { kind: "used", missing, version: packageVersion(), packageRoot, config: writeTemp(text) };
   made.set(configPath, result);

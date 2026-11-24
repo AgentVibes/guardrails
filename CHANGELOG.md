@@ -12,12 +12,14 @@
   running. The repo's file is not changed. `snapshot` prints a note (and a
   `notes` array in `--json`) that names the dir and the running version;
   `verify` and `verify-diff` print the same note on stderr. The version is
-  `runs.guardrails_version`, as for every run. A missing dir that is not
-  under `node_modules/@agentvibes/guardrails/` still fails as before.
+  `runs.guardrails_version`, as for every run. When another listed dir is
+  missing too (not under `node_modules/@agentvibes/guardrails/`), nothing is
+  replaced and the scan fails as before, naming the repo's `sgconfig.yml`.
 - **`snapshot` records the languages when the findings are unavailable.**
   `runs.languages` and `projects_latest.languages` were NULL when the
   TypeScript findings could not be measured. `verify` now records them too
-  when it stops on preset drift or a config ast-grep cannot load.
+  when it stops before the TypeScript scan (preset drift, a config ast-grep
+  cannot load, a bad `[severity]` or screen scope table).
 - **A TypeScript findings failure is recorded per language**, like a Rust
   one: a `run_parts` row with `language = 'typescript'`, status
   `unavailable` and the reason. `projects_latest.findings_unavailable` now
