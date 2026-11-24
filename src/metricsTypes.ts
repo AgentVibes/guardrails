@@ -104,7 +104,8 @@ export interface Baseline {
   version: 1;
   updatedAt: string;
   commit: string | null;
-  gated: GatedMetrics;
+  /** a key is absent when the file predates that gated metric (see checkAgainstBaseline) */
+  gated: Partial<GatedMetrics>;
   /** informational only — --check always recomputes and never trusts this */
   observed: ObservedMetrics;
 }

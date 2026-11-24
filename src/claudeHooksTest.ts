@@ -36,7 +36,10 @@ function sh(command: string, cwd: string, env: Record<string, string> = {}): Ran
     env: { ...process.env, CLAUDE_PROJECT_DIR: "", ...env },
     input: "{}",
   });
-  if (res.error) throw res.error;
+  // EPIPE: the command exited before reading the stdin written to it, as the
+  // no-install guard does (`exit 0` at once). Its exit status is still the result.
+  const epipe = (res.error as NodeJS.ErrnoException | undefined)?.code === "EPIPE";
+  if (res.error && !(epipe && res.status !== null)) throw res.error;
   return { status: res.status ?? -1, stdout: res.stdout, stderr: res.stderr };
 }
 

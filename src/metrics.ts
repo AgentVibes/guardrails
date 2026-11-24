@@ -208,6 +208,11 @@ function runMetricsInner(opts: MetricsOptions): number {
         : `guardrails metrics: baseline updated at ${baselinePath}${opts.force ? " (--force: set to current values)" : ""}`,
     );
     for (const k of result.tightened) console.log(`  tightened  ${k} → ${result.next[k]}`);
+    for (const k of result.adopted) {
+      console.log(
+        `  adopted    ${k} → ${result.next[k]} (gated since a later release, not in the old baseline)`,
+      );
+    }
     for (const k of result.withinHysteresis) {
       console.log(`  kept       ${k} (improved <2% — hysteresis holds the old ceiling)`);
     }
@@ -228,7 +233,7 @@ function runMetricsInner(opts: MetricsOptions): number {
       );
       return 2;
     }
-    const regressions = checkAgainstBaseline(metrics.gated, baseline.gated);
+    const { regressions, notYetGated } = checkAgainstBaseline(metrics.gated, baseline.gated);
     const fileSloc = checkFileSlocBaseline(cwd, metrics);
     const fileSlocRel = baselineKey(cwd, fileSlocBaselinePath(cwd));
     const ok = regressions.length === 0 && fileSloc.length === 0;
@@ -241,6 +246,7 @@ function runMetricsInner(opts: MetricsOptions): number {
             baselinePath,
             ok,
             regressions,
+            notYetGated,
             current: metrics.gated,
             baseline: baseline.gated,
             fileSloc: { baselinePath: fileSlocRel, violations: fileSloc },
@@ -250,6 +256,11 @@ function runMetricsInner(opts: MetricsOptions): number {
         ),
       );
       return ok ? 0 : 1;
+    }
+    for (const k of notYetGated) {
+      console.log(
+        `guardrails metrics --check: notice — ${k} is not in the baseline yet (current ${metrics.gated[k]}); not gated until \`guardrails metrics --update-baseline\` adopts it`,
+      );
     }
     if (ok) {
       console.log(
