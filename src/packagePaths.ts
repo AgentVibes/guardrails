@@ -51,3 +51,11 @@ export function ruleFixtureFilter(root: string): (file: string) => boolean {
   const fixtures = resolve(root, "rules", "__fixtures__") + sep;
   return (file) => resolve(root, file).startsWith(fixtures);
 }
+
+/** The version of the @agentvibes/guardrails install that is running. */
+export function packageVersion(): string {
+  const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
+    version: string;
+  };
+  return pkg.version;
+}

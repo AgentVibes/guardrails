@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { collectOverrides } from "./overrides.js";
-import { packageRoot } from "./packagePaths.js";
+import { packageRoot, packageVersion } from "./packagePaths.js";
 import { gitMetrics, locMetrics } from "./record/repoMetrics.js";
 
 // `guardrails snapshot` (snapshot.ts) and the record-only metrics
@@ -168,24 +168,82 @@ function plainRepoCases(): void {
   }
 }
 
-function brokenSetupCases(): void {
-  // A repo that lists the canon rule dir but never installed the package:
-  // ast-grep cannot load the config. The other parts must still be recorded.
+const WIRED = {
+  "package.json": `${JSON.stringify({ name: "x", scripts: { lint: "guardrails verify ." } })}\n`,
+  "src/a.ts": "export const a = (x: unknown) => x as any;\n",
+};
+
+function canonFallbackCases(): void {
+  // A wired repo whose dependencies were never installed: its sgconfig.yml
+  // lists node_modules/@agentvibes/guardrails/rules, which does not exist. The
+  // scan uses the running package's rules instead and says so.
   const dir = repo({
-    "package.json": `${JSON.stringify({ name: "x", scripts: { lint: "guardrails verify ." } })}\n`,
+    ...WIRED,
     "sgconfig.yml": "ruleDirs:\n  - node_modules/@agentvibes/guardrails/rules\n",
-    "src/a.ts": "export const a = 1;\n",
+  });
+  const before = listing(dir);
+  const state = mkdtempSync(join(tmpdir(), "guardrails-snapshot-state-"));
+  const db = join(state, "g.sqlite");
+  try {
+    const res = snapshot(dir, ["--json"], { GUARDRAILS_RECORD: db });
+    const out = JSON.parse(res.stdout || "{}") as { parts?: string[]; notes?: string[] };
+    const note = out.notes?.[0] ?? "";
+    check(
+      "a missing canon dir is scanned with the running package's rules",
+      res.status === 0 &&
+        (out.parts ?? []).some((p) => /^findings [1-9]\d* error\(s\)/.test(p)) &&
+        note.includes("node_modules/@agentvibes/guardrails/rules") &&
+        note.includes(`@agentvibes/guardrails ${packageVersion()}`),
+      `${res.stdout} ${res.stderr}`,
+    );
+    const r = rows(db, "SELECT languages, errors, guardrails_version FROM runs")[0];
+    check(
+      "the fallback run records its languages, errors and the running version",
+      r?.languages === "typescript" &&
+        Number(r.errors) >= 1 &&
+        r.guardrails_version === packageVersion(),
+      JSON.stringify(r),
+    );
+    check(
+      "the fallback writes nothing into the observed repo",
+      JSON.stringify(listing(dir)) === JSON.stringify(before),
+    );
+    const verify = spawnSync("node", [CLI, "verify", "--json"], { cwd: dir, encoding: "utf8" });
+    check(
+      "verify takes the same fallback, says so and gates on the canon finding",
+      verify.status === 1 &&
+        /as-any-escape/.test(verify.stdout) &&
+        /scanned with the rules of the running @agentvibes\/guardrails/.test(verify.stderr),
+      `${verify.status} ${verify.stdout.slice(0, 300)} ${verify.stderr}`,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+}
+
+function brokenSetupCases(): void {
+  // A repo-local rule dir that does not exist is not the canon: no fallback,
+  // ast-grep cannot load the config. The other parts must still be recorded,
+  // and so must the languages and a TypeScript row with the reason.
+  const dir = repo({
+    ...WIRED,
+    "sgconfig.yml":
+      "ruleDirs:\n  - node_modules/@agentvibes/guardrails/rules\n  - .ast-grep/rules\n",
   });
   const state = mkdtempSync(join(tmpdir(), "guardrails-snapshot-state-"));
   const db = join(state, "g.sqlite");
   try {
     const res = snapshot(dir, [], { GUARDRAILS_RECORD: db });
     const parts = Object.fromEntries(
-      rows(db, "SELECT part, status FROM run_parts").map((r) => [r.part, r.status]),
+      rows(db, "SELECT part, status FROM run_parts WHERE language IS NULL").map((r) => [
+        r.part,
+        r.status,
+      ]),
     );
     const p = rows(
       db,
-      "SELECT wiring, wiring_sgconfig_canon, errors, sloc FROM projects_latest",
+      "SELECT wiring, wiring_sgconfig_canon, errors, sloc, languages, findings_unavailable FROM projects_latest",
     )[0];
     check(
       "a broken setup records findings unavailable and the other parts measured",
@@ -200,11 +258,61 @@ function brokenSetupCases(): void {
         p.sloc === 1,
       `${JSON.stringify(parts)} ${JSON.stringify(p)} ${res.stdout} ${res.stderr}`,
     );
-    const reason = rows(db, "SELECT reason FROM run_parts WHERE part = 'findings'")[0]?.reason;
+    const reason = rows(
+      db,
+      "SELECT reason FROM run_parts WHERE part = 'findings' AND language IS NULL",
+    )[0]?.reason;
     check(
-      "the unavailable part keeps its reason",
-      typeof reason === "string" && reason.length > 0,
+      "the whole-run part keeps the ast-grep reason, not a per-language one",
+      typeof reason === "string" &&
+        /^ast-grep exited 6/.test(reason) &&
+        reason.includes(`${dir}/sgconfig.yml`) &&
+        !reason.includes("guardrails-sgconfig-"),
       String(reason),
+    );
+    const run = rows(db, "SELECT languages FROM runs")[0];
+    check(
+      "the languages are recorded although the findings are unavailable",
+      run?.languages === "typescript" && p?.languages === "typescript",
+      `${JSON.stringify(run)} ${JSON.stringify(p)}`,
+    );
+    const ts = rows(
+      db,
+      "SELECT status, reason FROM run_parts WHERE part = 'findings' AND language = 'typescript'",
+    )[0];
+    check(
+      "the TypeScript failure is recorded per language with its reason",
+      ts?.status === "unavailable" && ts.reason === reason,
+      JSON.stringify(ts),
+    );
+    check(
+      "projects_latest.findings_unavailable names the TypeScript failure",
+      typeof p?.findings_unavailable === "string" &&
+        p.findings_unavailable === `typescript: ${String(reason)}`,
+      String(p?.findings_unavailable),
+    );
+    check("no fallback note for a repo-local dir", !/scanned with the rules/.test(res.stdout));
+    // A run over some paths records its languages and the TypeScript row, but
+    // says nothing about the whole repo: projects_latest is not refreshed.
+    const paths = join(state, "paths.sqlite");
+    const v = spawnSync("node", [CLI, "verify", "src"], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { ...process.env, GUARDRAILS_RECORD: paths },
+    });
+    const vr = rows(paths, "SELECT languages FROM runs")[0];
+    const vts = rows(
+      paths,
+      "SELECT status FROM run_parts WHERE part = 'findings' AND language = 'typescript'",
+    )[0];
+    const vp = rows(paths, "SELECT findings_unavailable FROM projects_latest")[0];
+    check(
+      "verify on a path records languages and the TypeScript failure, not projects_latest",
+      v.status === 2 &&
+        vr?.languages === "typescript" &&
+        vts?.status === "unavailable" &&
+        vp?.findings_unavailable === null,
+      `${v.status} ${JSON.stringify([vr, vts, vp])} ${v.stderr}`,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -242,6 +350,7 @@ function unitCases(): void {
 function main(): number {
   unitCases();
   plainRepoCases();
+  canonFallbackCases();
   brokenSetupCases();
   if (failed > 0) {
     console.error(`\n${failed} snapshot check(s) failed`);
