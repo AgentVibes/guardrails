@@ -59,9 +59,36 @@ function repo(base: string, name: string, files: Record<string, string>): string
   return dir;
 }
 
+/** The directory a tool resolves to on the current PATH; throws when it is not installed. */
+function toolDir(tool: string): string {
+  const res = spawnSync("/bin/sh", ["-c", `command -v ${tool}`], { encoding: "utf8" });
+  const path = res.stdout.trim();
+  if (res.status !== 0 || path === "") {
+    throw new Error(`claude-hooks test: ${tool} is not on PATH; the hook tests need it`);
+  }
+  return dirname(path);
+}
+
 // A PATH with node, npx and pnpm but no globally installed guardrails, so an
-// install on the test machine cannot hide the "not installed" case.
-const NO_GLOBAL = { PATH: `${dirname(process.execPath)}:/usr/bin:/bin` };
+// install on the test machine cannot hide the "not installed" case. pnpm is
+// looked up, not assumed next to node: CI installs it in its own directory.
+const NO_GLOBAL = {
+  PATH: [
+    ...new Set([dirname(process.execPath), toolDir("npx"), toolDir("pnpm"), "/usr/bin", "/bin"]),
+  ].join(":"),
+};
+{
+  const leak = spawnSync("/bin/sh", ["-c", "command -v guardrails"], {
+    env: NO_GLOBAL,
+    encoding: "utf8",
+  });
+  // ast-grep-ignore: kind-if-without-match -- `status` is a process exit code (a number), not a union tag
+  if (leak.status === 0) {
+    throw new Error(
+      `claude-hooks test: a global guardrails is on the test PATH (${leak.stdout.trim()})`,
+    );
+  }
+}
 
 function commandRuns(base: string): void {
   for (const [lock, label] of [
