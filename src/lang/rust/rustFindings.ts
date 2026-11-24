@@ -6,7 +6,8 @@ import type { Finding } from "../../findings.js";
 import { addedLinesByFile, changedFiles, RUST_PATHSPECS } from "../../gitDiff.js";
 import type { Rung } from "../../verifyDiff.js";
 import { type CargoRoot, cargoRoots } from "./cargoManifest.js";
-import { type CargoOptions, type CargoResult, runClippy, runFmtCheck } from "./clippy.js";
+import { type PlannedRun, planCargoRuns } from "./cargoPlan.js";
+import { type CargoResult, runClippy, runFmtCheck, selectionArgs } from "./clippy.js";
 
 // The Rust contribution to verify, verify-diff, hook-stop and snapshot:
 // clippy and rustfmt over every Cargo root, findings with absolute paths,
@@ -49,45 +50,72 @@ function snapshotEnv(cargoDir: string): Record<string, string> {
   return { CARGO_TARGET_DIR: join(cache, "agentvibes", "guardrails", "cargo-target", key) };
 }
 
-function optionsFor(mode: RustRunMode, cargoDir: string, pkg?: string): CargoOptions {
-  return {
-    package: pkg,
-    timeoutMs: clippyTimeoutMs(mode),
-    ...(mode === "snapshot" ? { env: snapshotEnv(cargoDir), locked: true } : {}),
-  };
-}
-
 function label(r: CargoRoot): string {
   return r.rel === "" ? "Cargo.toml" : `${r.rel}/Cargo.toml`;
 }
 
 function collect(
   into: RustFindings,
-  r: CargoRoot,
-  check: "clippy" | "rustfmt",
+  where: string,
+  keep: (f: Finding) => boolean,
   result: CargoResult,
 ): void {
   match(result)
     .with({ status: "ran" }, (res) => {
-      into.findings.push(...res.findings);
+      into.findings.push(...res.findings.filter(keep));
     })
     .with({ status: "unavailable" }, (res) => {
-      into.unavailable.push(`${label(r)} ${check}: ${res.reason}`);
+      into.unavailable.push(`${where}: ${res.reason}`);
     })
     .exhaustive();
 }
 
-/** clippy + rustfmt over the given roots. */
+/** `clippy` for the default run, `clippy (--workspace --exclude web)` for a configured one. */
+function clippyLabel(r: CargoRoot, run: PlannedRun, configured: boolean): string {
+  return configured
+    ? `${label(r)} clippy (${selectionArgs(run.selection, run.target).join(" ")})`
+    : `${label(r)} clippy`;
+}
+
+/**
+ * clippy (once per planned run) + rustfmt over the given roots. Findings in
+ * `[verify] exclude` paths and in members no run checks are dropped: cargo
+ * still compiles them as dependencies, and rustfmt formats the whole root.
+ */
 export function runRustChecks(
   repoRoot: string,
   roots: readonly CargoRoot[],
   mode: RustRunMode,
 ): RustFindings {
+  const plan = planCargoRuns(repoRoot, roots);
   const out: RustFindings = { findings: [], unavailable: [], filesScanned: -1 };
   for (const r of roots) {
-    const opts = optionsFor(mode, r.manifest.dir);
-    collect(out, r, "clippy", runClippy(r.manifest.dir, repoRoot, opts));
-    collect(out, r, "rustfmt", runFmtCheck(r.manifest.dir, opts));
+    const rootPlan = plan.get(r);
+    if (rootPlan === undefined) throw new Error(`no cargo plan for ${label(r)}`);
+    const keep = (f: Finding): boolean => !rootPlan.dropped(f.file);
+    const common = {
+      timeoutMs: clippyTimeoutMs(mode),
+      severity: mode === "snapshot" ? ("clippy-level" as const) : ("canon" as const),
+      ...(mode === "snapshot" ? { env: snapshotEnv(r.manifest.dir), locked: true } : {}),
+    };
+    for (const run of rootPlan.runs) {
+      collect(
+        out,
+        clippyLabel(r, run, rootPlan.configured),
+        keep,
+        runClippy(r.manifest.dir, repoRoot, { ...common, ...run }),
+      );
+    }
+    collect(
+      out,
+      `${label(r)} rustfmt`,
+      keep,
+      runFmtCheck(r.manifest.dir, {
+        ...common,
+        selection: { kind: "workspace", exclude: [] },
+        target: { kind: "host" },
+      }),
+    );
   }
   return out;
 }
@@ -142,8 +170,13 @@ export function rustDiffFindings(
   const files = plan.files?.filter((f) => !excluded(f));
   if (files !== undefined && files.length === 0)
     return { findings: [], unavailable: [], filesScanned: 0 };
+  // A file in a member no run checks (`[[rust.cargo]]`) touches nothing:
+  // clippy would not look at it, so running it would only cost time.
+  const cargoPlan = planCargoRuns(cwd, roots);
+  const checks = (r: CargoRoot, f: string): boolean =>
+    inside(r.manifest.dir, f) && cargoPlan.get(r)?.dropped(f) === false;
   const touched =
-    files === undefined ? roots : roots.filter((r) => files.some((f) => inside(r.manifest.dir, f)));
+    files === undefined ? roots : roots.filter((r) => files.some((f) => checks(r, f)));
   if (touched.length === 0)
     return { findings: [], unavailable: [], filesScanned: files?.length ?? 0 };
   const result = runRustChecks(cwd, touched, mode);

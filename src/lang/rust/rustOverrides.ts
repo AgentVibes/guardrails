@@ -3,8 +3,11 @@ import { relative, resolve, sep } from "node:path";
 import { match } from "ts-pattern";
 import { dropGitignored } from "../../fileSloc.js";
 import { collectFiles } from "../../fileWalk.js";
+import { isPlaceholderReason } from "../../overrideDeclarations.js";
 import type { Configured, Override, OverrideReason } from "../../overrides.js";
+import { CARGO_CONFIG_KEY } from "./cargoConfig.js";
 import { type CargoRoot, cargoRoots, type Manifest } from "./cargoManifest.js";
+import { planCargoRuns } from "./cargoPlan.js";
 import { canonLints, compareLints, lintLine, lintName, parseLintTables } from "./lintTable.js";
 import { closingBracket, lineAt, maskRust, splitArgs, stringValue } from "./rustSource.js";
 import { governingLints } from "./rustWiring.js";
@@ -36,7 +39,8 @@ function rel(root: string, path: string): string {
 
 function reasonOf(text: string | undefined): OverrideReason {
   const t = (text ?? "").trim();
-  return t === "" ? { status: "missing" } : { status: "given", text: t };
+  // `reason = "<explanation>"` is a placeholder someone forgot to fill in.
+  return t === "" || isPlaceholderReason(t) ? { status: "missing" } : { status: "given", text: t };
 }
 
 interface Attribute {
@@ -158,6 +162,16 @@ function testRanges(masked: string, attrs: readonly Attribute[]): [number, numbe
   return out;
 }
 
+/** How many `{` are open at `offset` in masked text (0 = file level). */
+function braceDepth(masked: string, offset: number): number {
+  let depth = 0;
+  for (let i = 0; i < offset; i++) {
+    if (masked[i] === "{") depth++;
+    else if (masked[i] === "}") depth--;
+  }
+  return depth;
+}
+
 function inTestDir(relPath: string): boolean {
   return relPath.split("/").some((s) => TEST_DIRS.has(s));
 }
@@ -172,8 +186,12 @@ export function rustAllowOverrides(relPath: string, text: string): Override[] {
   const out: Override[] = [];
   for (const a of attrs) {
     const inTest = testFile || tests.some(([s, e]) => a.start >= s && a.start < e);
+    // A file-level `#![allow]`/`#![expect]` switches the lint off for the
+    // whole file (for tests/*.rs, the whole test crate): never narrow, so it
+    // is listed even in test code, with its reason.
+    const fileLevel = a.inner && braceDepth(masked, a.start) === 0;
     for (const allow of allowsIn(masked, text, a.body[0], a.body[1], false)) {
-      const relaxed = inTest || allow.testOnly;
+      const relaxed = (inTest || allow.testOnly) && !fileLevel;
       // Narrow test relaxation: a test may switch a lint off when it says why.
       if (relaxed && allow.reason.status === "given") continue;
       const line = lineAt(text, a.start);
@@ -253,6 +271,26 @@ function rootOverrides(r: CargoRoot): Configured[] {
       .exhaustive(),
   );
   return [...governing, ...members];
+}
+
+/**
+ * Members that no `[[rust.cargo]]` run checks: clippy never looks at them,
+ * so each is a weakening of the canon (verify-scope `rust.cargo`), declared
+ * like `[verify] exclude`. Throws OverrideConfigError on a bad entry.
+ */
+export function cargoRunOverrides(root: string): Configured[] {
+  const roots = cargoRoots(root);
+  const plan = planCargoRuns(root, roots);
+  return roots.flatMap((r) =>
+    (plan.get(r)?.unchecked ?? []).map((m) => ({
+      kind: "verify-scope" as const,
+      rule: CARGO_CONFIG_KEY,
+      where: `[[${CARGO_CONFIG_KEY}]] root = "${r.rel || "."}" leaves out ${m.packageName ?? m.rel} (${manifestRel(m)}): clippy does not check it`,
+      file: ".agentvibes/project.toml",
+      line: 0,
+      paths: [],
+    })),
+  );
 }
 
 /** Every cargo-lint override in the checkout, each still without its reason. */

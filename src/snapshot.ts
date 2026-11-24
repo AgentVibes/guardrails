@@ -103,7 +103,21 @@ function measureFindings(
     .exhaustive();
   list.push(...(report?.findings ?? []));
   if (hasLanguage(languages, "rust")) {
-    const rust = rustVerifyFindings(root, "snapshot");
+    // A [[rust.cargo]] or [verify] exclude the gate cannot honour makes Rust
+    // unavailable with the reason; snapshot itself never fails on it.
+    const rust = match(attempt(() => rustVerifyFindings(root, "snapshot")))
+      .with({ status: "measured" }, (p) => p.data)
+      .with({ status: "unavailable" }, (p) => ({
+        findings: [],
+        unavailable: [p.reason],
+        filesScanned: 0,
+      }))
+      .with({ status: "skipped" }, () => ({
+        findings: [],
+        unavailable: ["not measured"],
+        filesScanned: 0,
+      }))
+      .exhaustive();
     list.push(
       ...rust.findings.map((f) => ({
         ...f,

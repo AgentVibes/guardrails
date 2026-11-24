@@ -1,12 +1,15 @@
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, relative, sep } from "node:path";
 import { match } from "ts-pattern";
 import type { Finding } from "../../findings.js";
 import { addedLines, gitRoot, RUST_PATHSPECS, resolveMergeBase } from "../../gitDiff.js";
 import { OverrideConfigError } from "../../overrideDeclarations.js";
+import { verifyExcludeRe } from "../../verifyExclude.js";
 import { hasLanguage, resolveLanguages } from "../languages.js";
-import { cargoRoots, owningPackage } from "./cargoManifest.js";
+import type { CargoTarget } from "./cargoConfig.js";
+import { type CargoRoot, cargoRoots, owningPackage } from "./cargoManifest.js";
+import { planCargoRuns, type RootPlan } from "./cargoPlan.js";
 import { runClippy } from "./clippy.js";
 import { clippyTimeoutMs } from "./rustFindings.js";
 
@@ -62,6 +65,36 @@ function rustEnabled(root: string): { ok: true } | { ok: false; note: string | u
   }
 }
 
+const HOST: CargoTarget = { kind: "host" };
+
+/**
+ * The target of the [[rust.cargo]] run that checks `name`. A package no run
+ * checks is not checked by the hook either.
+ */
+function hookTarget(
+  repoRoot: string,
+  owner: CargoRoot,
+  name: string,
+): { status: "run"; target: CargoTarget } | { status: "skip"; note: string } {
+  let plan: RootPlan | undefined;
+  try {
+    plan = planCargoRuns(repoRoot, [owner]).get(owner);
+  } catch (err) {
+    if (!(err instanceof OverrideConfigError)) throw err;
+    return { status: "skip", note: err.message };
+  }
+  if (plan === undefined) throw new Error(`no cargo plan for ${owner.rel || "the repo root"}`);
+  if (plan.unchecked.some((m) => m.packageName === name))
+    return { status: "skip", note: `${name} is left out of every [[rust.cargo]] run` };
+  const run = plan.runs.find((r) =>
+    match(r.selection)
+      .with({ kind: "workspace" }, (s) => !s.exclude.includes(name))
+      .with({ kind: "packages" }, (s) => s.names.includes(name))
+      .exhaustive(),
+  );
+  return { status: "run", target: run?.target ?? HOST };
+}
+
 export function rustPostedit(tool: string, editedFile: string): RustPostedit {
   const file = real(editedFile);
   const root = gitRoot(dirname(file));
@@ -69,16 +102,36 @@ export function rustPostedit(tool: string, editedFile: string): RustPostedit {
   const repoRoot = real(root);
   const enabled = rustEnabled(repoRoot);
   if (!enabled.ok) return { status: "skip", note: enabled.note };
+  // An edit inside `[verify] exclude` (a vendored crate) is not gated, as
+  // for TypeScript: the crate is no Cargo root and clippy never checks it.
+  let exclude: RegExp | undefined;
+  try {
+    exclude = verifyExcludeRe(repoRoot);
+  } catch (err) {
+    if (!(err instanceof OverrideConfigError)) throw err;
+    return { status: "skip", note: err.message };
+  }
+  if (exclude?.test(relative(repoRoot, file).split(sep).join("/")) === true)
+    return { status: "skip", note: undefined };
   const pkg = owningPackage(repoRoot, file);
   if (pkg?.packageName === undefined)
     return { status: "skip", note: `no Cargo package owns ${editedFile}` };
   // Cargo reports span paths relative to the workspace root, so clippy runs there.
-  const cargoRoot =
-    cargoRoots(repoRoot).find(
-      (r) => r.manifest.dir === pkg.dir || r.members.some((m) => m.dir === pkg.dir),
-    )?.manifest.dir ?? pkg.dir;
+  const name = pkg.packageName;
+  const owner = cargoRoots(repoRoot).find(
+    (r) => r.manifest.dir === pkg.dir || r.members.some((m) => m.dir === pkg.dir),
+  );
+  const cargoRoot = owner?.manifest.dir ?? pkg.dir;
+  const picked =
+    owner === undefined
+      ? { status: "run" as const, target: HOST }
+      : hookTarget(repoRoot, owner, name);
+  if (picked.status === "skip") return picked;
+  const target = picked.target;
   const result = runClippy(cargoRoot, repoRoot, {
-    package: pkg.packageName,
+    selection: { kind: "packages", names: [name] },
+    target,
+    severity: "canon",
     timeoutMs: clippyTimeoutMs("hook-postedit"),
   });
   return match(result)

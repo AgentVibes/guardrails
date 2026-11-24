@@ -6,8 +6,13 @@ import { DEFAULT_MAX_FILE_SLOC } from "./fileSlocBaseline.js";
 import { collectFiles } from "./fileWalk.js";
 import type { Finding } from "./findings.js";
 import { hasLanguage, resolveLanguages } from "./lang/languages.js";
-import { cargoLintOverrides, rustInlineOverrides } from "./lang/rust/rustOverrides.js";
 import {
+  cargoLintOverrides,
+  cargoRunOverrides,
+  rustInlineOverrides,
+} from "./lang/rust/rustOverrides.js";
+import {
+  isPlaceholderReason,
   type OverrideDeclaration,
   readOverrideDeclarations,
   samePaths,
@@ -100,8 +105,8 @@ const BIOME_IGNORE = new RegExp(
 
 function reasonOf(text: string | undefined): OverrideReason {
   const t = (text ?? "").trim();
-  // Biome's own placeholder, written by its quick-fix, is not a reason.
-  if (t === "" || t === "<explanation>") return { status: "missing" };
+  // A placeholder (biome's `<explanation>`, our `<why>`) is not a reason.
+  if (t === "" || isPlaceholderReason(t)) return { status: "missing" };
   return { status: "given", text: t };
 }
 
@@ -326,6 +331,7 @@ export function collectOverrides(root: string, targets: string[] = ["."]): Overr
     ...ruleShadows(root),
     ...metricsLimits(root),
     ...(rust ? cargoLintOverrides(root) : []),
+    ...(rust ? cargoRunOverrides(root) : []),
   ];
   const overrides: Override[] = [
     ...configured.map((c) => {

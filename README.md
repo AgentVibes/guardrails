@@ -424,7 +424,9 @@ switches a lint off, and gates new findings on the lines a diff added.
   no workspace). The lint cap makes cargo check every crate even when one
   crate has a deny-level finding; each finding keeps its original level in
   the message, and every finding is error tier, because CI runs Clippy with
-  `-D warnings`.
+  `-D warnings`. `snapshot` observes rather than gates, so it records each
+  finding at Clippy's own level: a `warn` lint is a warning there, a
+  `deny` lint an error.
 - `verify-diff` runs the same checks only in Cargo roots where a `.rs` file
   changed, and fails only on findings on added lines (the same rungs as
   TypeScript: added lines vs merge-base, else whole changed files, else the
@@ -438,6 +440,52 @@ switches a lint off, and gates new findings on the lines a diff added.
   `CARGO_TARGET_DIR` is set, a target directory under
   `$XDG_CACHE_HOME/agentvibes/guardrails/cargo-target/`, so it writes nothing
   into the repo.
+
+**Vendored crates and how clippy runs.** `[verify] exclude` (the regex of
+[Scopes](#scopes--the-repo-states-a-fact-the-canon-says-which-rules-stand-down))
+also applies to Rust: a `Cargo.toml` whose repo-relative path matches is not
+a Cargo root, so `doctor`, `verify`, `verify-diff`, `snapshot` and the
+hooks skip it; a workspace member there is passed to clippy as `--exclude`;
+and findings in matching paths are dropped (cargo still compiles such a
+crate when another one depends on it).
+
+By default each Cargo root gets one host run of `cargo clippy --workspace`.
+`[[rust.cargo]]` in `.agentvibes/project.toml` replaces that for one root
+with one run per entry:
+
+```toml
+[[rust.cargo]]
+root = "."                          # the Cargo root, repo-relative ("." = repo root)
+exclude_packages = ["web"]          # --workspace --exclude web
+
+[[rust.cargo]]
+root = "."
+target = "wasm32-unknown-unknown"   # --target …; "host" (the default) = no --target
+packages = ["web"]                  # -p web instead of --workspace
+```
+
+| key | default | meaning |
+|---|---|---|
+| `root` | `"."` | the directory of the Cargo root the entry is for; it must be one `doctor` lists |
+| `target` | `"host"` | a target triple passed as `--target` |
+| `packages` | `[]` | run `-p` for these packages only |
+| `exclude_packages` | `[]` | run `--workspace --exclude` for these packages |
+
+`packages` and `exclude_packages` cannot both be set in one entry. A root
+or package name that does not exist is a config error (exit 2 with the
+reason), never a run that checks less than it says. `verify`,
+`verify-diff`, `snapshot` and `hook-postedit` use the same runs; rustfmt
+still runs once per root. **A member that no run checks is not checked at
+all**: `verify-diff` does not run cargo for a change only there, its
+findings are dropped, and the [override inventory](#overrides) lists it as a
+`verify-scope` override (`rule = "rust.cargo"`) that needs a reason:
+`[[override]] kind = "verify-scope", rule = "rust.cargo", reason = "…"`.
+
+A crate whose path dependency is generated at build time cannot be left out
+this way: cargo loads the whole workspace, every member's path dependencies
+included, before it selects packages, so `--exclude` does not help. Generate
+the dependency before the check, or move the crate out of the workspace
+(Cargo's own `[workspace] exclude`) and into `[verify] exclude`.
 
 cargo runs with your environment: `RUSTC_WRAPPER` (sccache) and
 `CARGO_TARGET_DIR` are used as set. `GUARDRAILS_CLIPPY_TIMEOUT_S` limits each
@@ -458,8 +506,8 @@ problem: they print the reason on stderr and exit 0.
 
 | check | passes when |
 |---|---|
-| `rust.clippy-strict` | the lint table that governs each Cargo root (`[workspace.lints]` in a workspace root, `[lints]` in a single crate) has every canon entry at the canon level or stricter, and `pedantic` and `nursery` at `warn` or above with priority -1 or lower |
-| `rust.lints-inherited` | every workspace member has `[lints] workspace = true` (a member with its own `[lints]` table fails, and its table is compared with the canon as an override) |
+| `rust.clippy-strict` | the lint table that governs each Cargo root (`[workspace.lints]` in a workspace root, `[lints]` in a single crate) has every canon entry at the canon level or stricter, and `pedantic` and `nursery` at `warn` or above with priority -1 or lower; in a workspace, also when every crate clippy checks has its own `[lints]` that meets the canon (members under `[verify] exclude` or left out of every `[[rust.cargo]]` run do not count) |
+| `rust.lints-inherited` | every workspace member has `[lints] workspace = true` (a member with its own `[lints]` table fails, and its table is compared with the canon as an override); a workspace with no `[workspace.lints]` whose checked crates each carry the canon passes, as there is nothing to inherit |
 | `rust.toolchain` | `rust-toolchain.toml` (or `rust-toolchain`) is in the Cargo root or the repo root |
 | `rust.ci` | a CI workflow, or a script it runs, runs `cargo clippy` with `-D warnings` (on the command line or in `RUSTFLAGS`) and `cargo fmt --check`, or runs `guardrails verify`, `verify-diff` or the reusable gate |
 
@@ -502,7 +550,11 @@ panic, and the error path it would otherwise need is noise. Nothing else is
 relaxed for tests by Clippy. In the override list, an `#[allow]` or
 `#[expect]` that has a `reason` and is in test code (a `#[cfg(test)]` or
 `#[test]` item, a `cfg_attr(test, …)`, or a file under `tests/`, `benches/`
-or `examples/`) is not listed; one without a reason is listed as usual.
+or `examples/`) is not listed; one without a reason is listed as usual. A
+file-level `#![allow(…)]` or `#![expect(…)]` (at the top of a file, so it
+covers the whole file, or the whole test crate for `tests/*.rs`) is always
+listed, with its reason. A reason that is only a placeholder,
+`reason = "<explanation>"` or `"<why>"`, counts as no reason.
 
 **Overrides.** Two kinds are added to the [override inventory](#overrides):
 
