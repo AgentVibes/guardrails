@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.2 (2026-11-24)
+
 - **A checkout without `node_modules` is scanned with the running
   package's rules.** A wired repo's `sgconfig.yml` lists
   `node_modules/@agentvibes/guardrails/rules`. In a checkout where
