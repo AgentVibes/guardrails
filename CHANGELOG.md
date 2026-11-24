@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.3 (2026-11-24)
+
 - **`verify` and `snapshot` of this package's own checkout skip
   `rules/__fixtures__/`.** Those files are the examples each rule's test runs
   on, and `bad.ts` violates on purpose. `verify-diff` already skipped them;
