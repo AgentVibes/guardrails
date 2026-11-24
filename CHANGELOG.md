@@ -12,7 +12,9 @@ Rust fixes found while rolling guardrails out to Rust repos.
   run clippy in them. A workspace member under the exclude is passed to
   clippy as `--exclude`, and findings in excluded paths are dropped. An
   exclude that is not a regular expression is now a config error (exit 2)
-  instead of a crash.
+  instead of a crash. `hook-postedit` no longer runs clippy for an edit in
+  an excluded `.rs` file, and `snapshot` records a Rust config error as
+  Rust `unavailable` with the reason instead of failing.
 - **`[[rust.cargo]]` sets how clippy runs per Cargo root:** `root`,
   `target` (`--target`), `packages` (`-p`) or `exclude_packages`
   (`--workspace --exclude`); several entries are several runs. Used by

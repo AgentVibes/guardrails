@@ -35,8 +35,20 @@ interface Ran {
 
 let env: NodeJS.ProcessEnv = process.env;
 
-function run(cwd: string, cmd: string, args: string[], input?: string): Ran {
-  const res = spawnSync(cmd, args, { cwd, encoding: "utf8", env, input, timeout: 600_000 });
+function run(
+  cwd: string,
+  cmd: string,
+  args: string[],
+  input?: string,
+  extra: Record<string, string> = {},
+): Ran {
+  const res = spawnSync(cmd, args, {
+    cwd,
+    encoding: "utf8",
+    env: { ...env, ...extra },
+    input,
+    timeout: 600_000,
+  });
   if (res.error) throw res.error;
   return { status: res.status ?? -1, out: `${res.stdout}${res.stderr}`, stdout: res.stdout };
 }
@@ -257,6 +269,90 @@ function cargoConfigSteps(ws: string, targetDir: string): void {
     diff.status === 0 && !diff.out.includes("could not run"),
     diff.out,
   );
+  const hook = run(
+    ws,
+    "node",
+    [join(packageRoot, "dist", "cli.js"), "hook-postedit"],
+    JSON.stringify({
+      tool_name: "Write",
+      tool_input: { file_path: join(ws, "vendor/up/src/lib.rs") },
+    }),
+  );
+  expect(
+    "hook-postedit: an edit in a vendored crate is not gated",
+    hook.status === 0 && !hook.out.includes('"decision":"block"') && !hook.out.includes("unwrap"),
+    hook.out,
+  );
+  const state = join(targetDir, "..", "state");
+  const snap = run(
+    ws,
+    "node",
+    [join(packageRoot, "dist", "cli.js"), "snapshot", "--json"],
+    undefined,
+    {
+      XDG_STATE_HOME: state,
+    },
+  );
+  expect(
+    "snapshot honours [verify] exclude and [[rust.cargo]]: Rust measured, nothing from vendor/ or the left-out member",
+    snap.status === 0 &&
+      // Rust measured (no note), no error, and the 4 warnings are exactly the two
+      // overrides' canon-overridden + override-without-reason: the vendored
+      // crate's unwrap would be a fifth.
+      snap.stdout.includes('"notes": []') &&
+      snap.stdout.includes('"findings 0 error(s), 4 other"'),
+    snap.out,
+  );
+
+  // Config the gate cannot honour: exit 2 with the reason, never a crash;
+  // the hooks never fail an edit for it; snapshot records it as unavailable.
+  const bad: [string, string, string][] = [
+    ["an exclude that is not a regex", '[verify]\nexclude = "("\n', "not a regular expression"],
+    [
+      "an unknown package in [[rust.cargo]]",
+      '[[rust.cargo]]\nroot = "."\nexclude_packages = ["typo"]\n',
+      "names typo, not a package",
+    ],
+  ];
+  for (const [name, body, want] of bad) {
+    write(ws, { ".agentvibes/project.toml": body });
+    const v = cli(ws, "verify");
+    expect(
+      `${name}: verify exits 2 with the reason, no stack trace`,
+      v.status === 2 && v.out.includes(want) && !v.out.includes("    at "),
+      v.out,
+    );
+    const vd = cli(ws, "verify-diff", "--base", "main");
+    expect(
+      `${name}: verify-diff exits 2 with the reason`,
+      vd.status === 2 && vd.out.includes(want) && !vd.out.includes("    at "),
+      vd.out,
+    );
+    const h = run(
+      ws,
+      "node",
+      [join(packageRoot, "dist", "cli.js"), "hook-postedit"],
+      JSON.stringify({
+        tool_name: "Write",
+        tool_input: { file_path: join(ws, "crates/core/src/lib.rs") },
+      }),
+    );
+    expect(`${name}: hook-postedit exits 0`, h.status === 0 && !h.out.includes("    at "), h.out);
+    const s = run(
+      ws,
+      "node",
+      [join(packageRoot, "dist", "cli.js"), "snapshot", "--json"],
+      undefined,
+      {
+        XDG_STATE_HOME: state,
+      },
+    );
+    expect(
+      `${name}: snapshot does not crash and names the reason`,
+      s.status === 0 && s.out.includes(want) && !s.out.includes("    at "),
+      s.out,
+    );
+  }
 }
 
 function main(): number {

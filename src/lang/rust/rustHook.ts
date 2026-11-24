@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, relative, sep } from "node:path";
 import { match } from "ts-pattern";
 import type { Finding } from "../../findings.js";
 import { addedLines, gitRoot, RUST_PATHSPECS, resolveMergeBase } from "../../gitDiff.js";
 import { OverrideConfigError } from "../../overrideDeclarations.js";
+import { verifyExcludeRe } from "../../verifyExclude.js";
 import { hasLanguage, resolveLanguages } from "../languages.js";
 import type { CargoTarget } from "./cargoConfig.js";
 import { type CargoRoot, cargoRoots, owningPackage } from "./cargoManifest.js";
@@ -101,6 +102,17 @@ export function rustPostedit(tool: string, editedFile: string): RustPostedit {
   const repoRoot = real(root);
   const enabled = rustEnabled(repoRoot);
   if (!enabled.ok) return { status: "skip", note: enabled.note };
+  // An edit inside `[verify] exclude` (a vendored crate) is not gated, as
+  // for TypeScript: the crate is no Cargo root and clippy never checks it.
+  let exclude: RegExp | undefined;
+  try {
+    exclude = verifyExcludeRe(repoRoot);
+  } catch (err) {
+    if (!(err instanceof OverrideConfigError)) throw err;
+    return { status: "skip", note: err.message };
+  }
+  if (exclude?.test(relative(repoRoot, file).split(sep).join("/")) === true)
+    return { status: "skip", note: undefined };
   const pkg = owningPackage(repoRoot, file);
   if (pkg?.packageName === undefined)
     return { status: "skip", note: `no Cargo package owns ${editedFile}` };
