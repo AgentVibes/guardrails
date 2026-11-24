@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`verify` and `snapshot` of this package's own checkout skip
+  `rules/__fixtures__/`.** Those files are the examples each rule's test runs
+  on, and `bad.ts` violates on purpose. `verify-diff` already skipped them;
+  the full scan counted them, so a snapshot of this repo recorded 162 errors
+  that were all fixtures. The checkout is recognised by its package name, as
+  `doctor` does. In any other repo, `rules/__fixtures__/` is scanned as before.
+
 - **A gated metric missing from an older `.guardrails/metrics.json` no
   longer fails `metrics --check`.** It was read as 0, so a release that adds
   a gated metric would turn every repo with an older baseline red. Now

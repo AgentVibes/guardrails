@@ -347,8 +347,64 @@ function unitCases(): void {
   }
 }
 
+/** Files of every finding `verify --json` reports in `dir`. */
+function verifyFiles(dir: string): string[] {
+  const res = spawnSync("node", [CLI, "verify", ".", "--json"], { cwd: dir, encoding: "utf8" });
+  const parsed = JSON.parse(res.stdout) as { findings: { file: string }[] };
+  return parsed.findings.map((f) => f.file);
+}
+
+/**
+ * In this package's own checkout (by name), `rules/__fixtures__/` holds
+ * deliberate violations. The full scan (verify, snapshot) skips them as
+ * verify-diff does; the same files in a consumer repo are still findings.
+ */
+function ruleFixtureCases(): void {
+  const VIOLATION = "export const a = (x: unknown) => x as any;\n";
+  const tree = (name: string) => ({
+    "package.json": `${JSON.stringify({ name })}\n`,
+    "src/a.ts": VIOLATION,
+    "rules/__fixtures__/demo/bad.ts": VIOLATION,
+  });
+  const own = repo(tree("@agentvibes/guardrails"), "git@example.com:demo/own.git");
+  const consumer = repo(tree("consumer"), "git@example.com:demo/consumer.git");
+  const state = mkdtempSync(join(tmpdir(), "guardrails-snapshot-fixtures-"));
+  try {
+    const ownFiles = verifyFiles(own);
+    check(
+      "verify of this package's checkout skips rules/__fixtures__ and keeps the rest",
+      ownFiles.some((f) => f.includes("src/a.ts")) &&
+        !ownFiles.some((f) => f.includes("__fixtures__")),
+      JSON.stringify(ownFiles),
+    );
+    const consumerFiles = verifyFiles(consumer);
+    check(
+      "verify of a consumer still reports its rules/__fixtures__ files",
+      consumerFiles.some((f) => f.includes("__fixtures__")),
+      JSON.stringify(consumerFiles),
+    );
+    const db = join(state, "g.sqlite");
+    const res = snapshot(own, [], { GUARDRAILS_RECORD: db });
+    const fixtureRows = rows(
+      db,
+      "SELECT file FROM findings_latest WHERE file LIKE '%__fixtures__%'",
+    );
+    const srcRows = rows(db, "SELECT file FROM findings_latest WHERE file LIKE '%src/a.ts'");
+    check(
+      "snapshot of this package's checkout records no rules/__fixtures__ finding",
+      res.status === 0 && fixtureRows.length === 0 && srcRows.length > 0,
+      `status ${res.status} ${res.stderr} fixtures=${JSON.stringify(fixtureRows)} src=${srcRows.length}`,
+    );
+  } finally {
+    rmSync(own, { recursive: true, force: true });
+    rmSync(consumer, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+}
+
 function main(): number {
   unitCases();
+  ruleFixtureCases();
   plainRepoCases();
   canonFallbackCases();
   brokenSetupCases();
