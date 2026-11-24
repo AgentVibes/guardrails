@@ -1,3 +1,6 @@
+projectId = "agentvibes-guardrails"
+name      = "Guardrails"
+
 # Overrides of the canon in this repository, each with its reason (README: "Overrides").
 
 [[override]]
