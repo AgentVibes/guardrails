@@ -1,8 +1,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { match } from "ts-pattern";
+import { OverrideConfigError } from "../../overrideDeclarations.js";
 import type { WiringCheck } from "../../wiring.js";
-import { CargoManifestError, type CargoRoot, cargoRoots, readManifest } from "./cargoManifest.js";
+import {
+  CargoManifestError,
+  type CargoRoot,
+  cargoRoots,
+  type Manifest,
+  readManifest,
+} from "./cargoManifest.js";
+import { planCargoRuns } from "./cargoPlan.js";
 import { canonLints, compareLints, type LintTables, parseLintTables } from "./lintTable.js";
 
 // The Rust wiring checks. Each reads files only (TOML, CI configs) and
@@ -71,7 +79,49 @@ export function governingLints(r: CargoRoot):
 
 const SHOWN_GAPS = 6;
 
-function strictFor(r: CargoRoot, canon: LintTables): { ok: boolean; detail: string } {
+/**
+ * A workspace may carry the canon in each crate's own `[lints]` instead of
+ * `[workspace.lints]`. That counts when every crate clippy checks (members
+ * under `[verify] exclude` or left out of every `[[rust.cargo]]` run do not
+ * count) has its own table and each one meets the canon.
+ */
+function perCrateCanon(
+  r: CargoRoot,
+  checked: readonly Manifest[],
+  canon: LintTables,
+): { ok: true; detail: string } | { ok: false } {
+  if (r.manifest.workspace.kind === "none" || checked.length === 0) return { ok: false };
+  const meets = checked.every((m) =>
+    match(m.lints)
+      .with({ kind: "own" }, (l) => {
+        const { tables, problems } = parseLintTables(l.tables);
+        return problems.length === 0 && compareLints(tables, canon).gaps.length === 0;
+      })
+      .with({ kind: "absent" }, { kind: "inherits" }, () => false)
+      .exhaustive(),
+  );
+  if (!meets) return { ok: false };
+  return {
+    ok: true,
+    detail: `${where(r)}: every checked crate's own [lints] meets the canon (${checked.length} crate(s): ${checked
+      .map((m) => m.rel || ".")
+      .slice(0, SHOWN_GAPS)
+      .join(", ")}${checked.length > SHOWN_GAPS ? ", …" : ""})`,
+  };
+}
+
+function strictFor(
+  r: CargoRoot,
+  checked: readonly Manifest[],
+  canon: LintTables,
+): { ok: boolean; detail: string } {
+  const governed = strictForGoverning(r, canon);
+  if (governed.ok) return governed;
+  const per = perCrateCanon(r, checked, canon);
+  return per.ok ? per : governed;
+}
+
+function strictForGoverning(r: CargoRoot, canon: LintTables): { ok: boolean; detail: string } {
   const lints = governingLints(r);
   return match(lints)
     .with({ status: "absent" }, (l) => ({
@@ -95,9 +145,18 @@ function strictFor(r: CargoRoot, canon: LintTables): { ok: boolean; detail: stri
     .exhaustive();
 }
 
-function inheritedFor(r: CargoRoot): { ok: boolean; detail: string } {
+function inheritedFor(
+  r: CargoRoot,
+  checked: readonly Manifest[],
+  canon: LintTables,
+): { ok: boolean; detail: string } {
   if (r.manifest.workspace.kind === "none")
     return { ok: true, detail: `${where(r)} is a single crate; its own [lints] table applies` };
+  // No [workspace.lints] to inherit, and every crate carries the canon itself.
+  if (governingLints(r).status === "absent") {
+    const per = perCrateCanon(r, checked, canon);
+    if (per.ok) return { ok: true, detail: `${per.detail}; nothing to inherit` };
+  }
   const crates = [...(r.manifest.packageName === undefined ? [] : [r.manifest]), ...r.members];
   const missing = crates.filter((m) => m.lints.kind !== "inherits");
   if (missing.length === 0)
@@ -209,12 +268,14 @@ function perRoot(
 /** Every Rust wiring check for `root`, in RUST_WIRING_CHECKS order. `ciFiles` are repo-relative CI configs. */
 export function rustWiringChecks(root: string, ciFiles: readonly string[]): WiringCheck[] {
   let roots: CargoRoot[];
+  let plan: ReturnType<typeof planCargoRuns>;
   try {
     roots = cargoRoots(root);
     // cargoRoots skips manifests it cannot parse; a broken root manifest must fail loudly here.
     for (const r of roots) readManifest(root, r.manifest.path);
+    plan = planCargoRuns(root, roots);
   } catch (err) {
-    if (!(err instanceof CargoManifestError)) throw err;
+    if (!(err instanceof CargoManifestError) && !(err instanceof OverrideConfigError)) throw err;
     return RUST_WIRING_CHECKS.map((id) => fail(id, err.message));
   }
   if (roots.length === 0) {
@@ -223,9 +284,15 @@ export function rustWiringChecks(root: string, ciFiles: readonly string[]): Wiri
     );
   }
   const canon = canonLints();
+  const checked = (r: CargoRoot): Manifest[] => {
+    const unchecked = plan.get(r)?.unchecked ?? [];
+    return [...(r.manifest.packageName === undefined ? [] : [r.manifest]), ...r.members].filter(
+      (m) => !unchecked.includes(m),
+    );
+  };
   return [
-    perRoot("rust.clippy-strict", roots, (r) => strictFor(r, canon)),
-    perRoot("rust.lints-inherited", roots, inheritedFor),
+    perRoot("rust.clippy-strict", roots, (r) => strictFor(r, checked(r), canon)),
+    perRoot("rust.lints-inherited", roots, (r) => inheritedFor(r, checked(r), canon)),
     perRoot("rust.toolchain", roots, (r) => toolchainFor(root, r)),
     checkRustCi(root, ciFiles),
   ];

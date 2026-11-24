@@ -8,7 +8,7 @@ import { addedLines, gitRoot, resolveMergeBase } from "./gitDiff.js";
 import { rustPostedit } from "./lang/rust/rustHook.js";
 import { severityRaiseArgs } from "./severity.js";
 import { collectVerifyFindings } from "./verify.js";
-import { verifyExcludeRe } from "./verifyDiff.js";
+import { verifyExcludeRe } from "./verifyExclude.js";
 
 // Claude Code PostToolUse hook — port of defensive-errors hook-postedit.sh.
 // Reads the hook JSON on stdin; scans the just-edited TypeScript file; silent

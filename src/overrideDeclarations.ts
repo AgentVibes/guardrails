@@ -19,6 +19,15 @@ import { z } from "zod";
 // declaration answers which deviation, is overrides.ts; the biome preset check
 // (presetDrift.ts) asks it whether a non-preset biome rule is declared.
 
+/**
+ * A reason that is only a placeholder is no reason: biome's quick-fix writes
+ * `<explanation>`, and our own hints say `<why>`. Copying either verbatim
+ * must not make a deviation look justified.
+ */
+export function isPlaceholderReason(text: string): boolean {
+  return /^<[^<>]*>$/.test(text.trim());
+}
+
 /** `.agentvibes/project.toml` cannot be read the way this package needs. */
 export class OverrideConfigError extends Error {}
 

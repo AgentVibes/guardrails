@@ -3,6 +3,7 @@ import { isAbsolute, join, normalize, sep } from "node:path";
 import { match } from "ts-pattern";
 import { z } from "zod";
 import type { Finding } from "../../findings.js";
+import type { CargoSelection, CargoTarget } from "./cargoConfig.js";
 
 // Findings from `cargo clippy --message-format=json` and `cargo fmt --check`.
 //
@@ -14,8 +15,11 @@ import type { Finding } from "../../findings.js";
 // the command line with `-D …`", "`#[deny(…)]` on by default"), and is kept
 // in the finding's message.
 //
-// Every lint finding is ERROR tier: the canon runs clippy with -D warnings,
-// so a warning fails the build exactly like a deny.
+// For the gate (verify, verify-diff, hooks) every lint finding is ERROR
+// tier: the canon runs clippy with -D warnings, so a warning fails the build
+// exactly like a deny. Snapshot observes rather than gates, so it records
+// each finding at the level clippy itself gave it (severity "clippy-level"):
+// a warn-level lint is a warning there.
 //
 // Anything that is not a lint finding (a compile error E0308, a manifest
 // that cargo cannot load, a missing toolchain, a timeout) makes the result
@@ -90,7 +94,14 @@ function under(root: string, file: string): boolean {
  * spans outside `repoRoot` (dependencies, the standard library) are dropped.
  * Paths are absolute. A compile error makes the whole result unavailable.
  */
-export function parseClippyJson(output: string, cargoRoot: string, repoRoot: string): CargoResult {
+export type ClippySeverity = "canon" | "clippy-level";
+
+export function parseClippyJson(
+  output: string,
+  cargoRoot: string,
+  repoRoot: string,
+  severity: ClippySeverity = "canon",
+): CargoResult {
   const findings = new Map<string, Finding>();
   const errors: string[] = [];
   for (const line of output.split("\n")) {
@@ -122,12 +133,17 @@ export function parseClippyJson(output: string, cargoRoot: string, repoRoot: str
     if (code !== undefined && isLintCode(code)) {
       if (at === undefined || !under(repoRoot, at.file)) continue;
       const level = originalLevel(d);
+      const canon = severity === "canon";
       const f: Finding = {
         rule: code,
-        severity: "error",
+        severity: canon || level === "deny" ? "error" : "warning",
         file: at.file,
         line: at.line,
-        message: `${d.message} (${code} is ${level === "deny" ? "deny" : "warn, denied by -D warnings"})`,
+        message: `${d.message} (${code} is ${match({ level, canon })
+          .with({ level: "deny" }, () => "deny")
+          .with({ level: "warn", canon: true }, () => "warn, denied by -D warnings")
+          .with({ level: "warn", canon: false }, () => "warn")
+          .exhaustive()})`,
         source: code.startsWith("clippy::") ? "clippy" : "rustc",
       };
       // --all-targets checks a lib twice (lib, lib test): the same finding twice.
@@ -187,8 +203,12 @@ export function parseFmtCheck(output: string): Finding[] {
 }
 
 export interface CargoOptions {
-  /** `-p <name>` instead of `--workspace`. */
-  package?: string | undefined;
+  /** `--workspace [--exclude …]` or `-p …`. */
+  selection: CargoSelection;
+  /** `--target <triple>`, or the host. */
+  target: CargoTarget;
+  /** How a lint finding's severity is set (see the top of this file). */
+  severity: ClippySeverity;
   timeoutMs: number | undefined;
   /** Extra environment (CARGO_TARGET_DIR for runs that must not write into the repo). */
   env?: Record<string, string> | undefined;
@@ -244,10 +264,26 @@ function spawnCargo(
   return { status: "done", code: res.status ?? -1, stdout: res.stdout, stderr: res.stderr };
 }
 
+/** The selection and target as cargo arguments: `--workspace --exclude web`, `-p web --target wasm32-…`. */
+export function selectionArgs(selection: CargoSelection, target: CargoTarget): string[] {
+  const pick = match(selection)
+    .with({ kind: "workspace" }, (s) => [
+      "--workspace",
+      ...s.exclude.flatMap((n) => ["--exclude", n]),
+    ])
+    .with({ kind: "packages" }, (s) => s.names.flatMap((n) => ["-p", n]))
+    .exhaustive();
+  const triple = match(target)
+    .with({ kind: "host" }, () => [])
+    .with({ kind: "triple" }, (t) => ["--target", t.triple])
+    .exhaustive();
+  return [...pick, ...triple];
+}
+
 export function runClippy(cargoRoot: string, repoRoot: string, opts: CargoOptions): CargoResult {
   const args = [
     "clippy",
-    ...(opts.package === undefined ? ["--workspace"] : ["-p", opts.package]),
+    ...selectionArgs(opts.selection, opts.target),
     "--all-targets",
     "--message-format=json",
     "--keep-going",
@@ -261,7 +297,7 @@ export function runClippy(cargoRoot: string, repoRoot: string, opts: CargoOption
     .with(
       { status: "done" },
       (res): CargoResult =>
-        match(parseClippyJson(res.stdout, cargoRoot, repoRoot))
+        match(parseClippyJson(res.stdout, cargoRoot, repoRoot, opts.severity))
           .with({ status: "unavailable" }, (p) => p)
           .with(
             { status: "ran" },

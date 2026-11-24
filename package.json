@@ -1,6 +1,6 @@
 {
   "name": "@agentvibes/guardrails",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Verification toolkit that makes agents write simple code: ast-grep rule canon, diff ratchet, biome/tsconfig presets, one CLI.",
   "license": "MIT",
   "repository": {
@@ -39,7 +39,7 @@
     "format": "biome check --write .",
     "test:rules": "node dist/testRules.js",
     "test:gate": "node dist/gateRed.js",
-    "check": "pnpm build && pnpm lint && pnpm test:rules && pnpm test:twins && pnpm test:repo-rules && pnpm test:preset && pnpm test:overrides && pnpm test:wiring && pnpm test:record && pnpm test:snapshot && pnpm test:time && pnpm test:gate && pnpm test:sibling-clone && pnpm test:metrics && pnpm test:cli-args && pnpm test:init && pnpm test:severity && pnpm test:screens && pnpm test:jsx-suppress && pnpm test:hooks && pnpm test:claude-hooks && pnpm test:iterate && pnpm test:rename-diff && pnpm test:leaks && pnpm test:pipe && pnpm test:file-sloc && pnpm test:rust-language && pnpm test:rust-scan && pnpm test:schema-migration && pnpm test:rust-cli && pnpm leaks",
+    "check": "pnpm build && pnpm lint && pnpm test:rules && pnpm test:twins && pnpm test:repo-rules && pnpm test:preset && pnpm test:overrides && pnpm test:wiring && pnpm test:record && pnpm test:snapshot && pnpm test:time && pnpm test:gate && pnpm test:sibling-clone && pnpm test:metrics && pnpm test:cli-args && pnpm test:init && pnpm test:severity && pnpm test:screens && pnpm test:jsx-suppress && pnpm test:hooks && pnpm test:claude-hooks && pnpm test:iterate && pnpm test:rename-diff && pnpm test:leaks && pnpm test:pipe && pnpm test:file-sloc && pnpm test:rust-language && pnpm test:rust-scan && pnpm test:rust-config && pnpm test:schema-migration && pnpm test:rust-cli && pnpm leaks",
     "test:metrics": "node dist/metricsCycle.js",
     "leaks": "node dist/cli.js leaks .",
     "test:leaks": "node dist/leaksRed.js",
@@ -65,6 +65,7 @@
     "test:cli-args": "node dist/cliArgsTest.js",
     "test:rust-language": "node dist/rustLanguageTest.js",
     "test:rust-scan": "node dist/rustScanTest.js",
+    "test:rust-config": "node dist/rustConfigTest.js",
     "test:schema-migration": "node dist/schemaMigrationTest.js",
     "test:rust-cli": "node dist/rustCliTest.js"
   },

@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { join, relative } from "node:path";
+import { relative } from "node:path";
 import { match } from "ts-pattern";
 import { AstGrepConfigError, scanFindings } from "./astGrep.js";
 import { canonFallbackNote } from "./canonFallback.js";
@@ -29,7 +29,7 @@ import {
 } from "./screenScope.js";
 import { SeverityConfigError, severityRaiseArgs } from "./severity.js";
 import { structureFindings } from "./structure.js";
-import { readTomlTable } from "./tomlTable.js";
+import { verifyExcludeRe } from "./verifyExclude.js";
 import { detectWiring } from "./wiring.js";
 
 // Added-lines ratchet, ported from defensive-errors check-diff.sh, with the
@@ -70,19 +70,7 @@ interface Plan {
   size: SizeScope;
 }
 
-/**
- * `[verify] exclude = "<regex>"` in .agentvibes/project.toml — a VENDORED-tree
- * carve-out, ported from a consumer's check-diff.sh: a verbatim copy of somebody
- * else's package must not be held to this repo's rules (editing it to satisfy
- * them would turn the next upstream re-sync into a merge conflict and falsify
- * the byte-identical provenance that is the reason to vendor). The regex tests
- * the file path relative to the repo root.
- */
-export function verifyExcludeRe(cwd: string): RegExp | undefined {
-  const raw = readTomlTable(join(cwd, ".agentvibes", "project.toml"), "verify").exclude;
-  if (raw === undefined || raw === "") return undefined;
-  return new RegExp(raw);
-}
+export { verifyExcludeRe } from "./verifyExclude.js";
 
 export function resolveRung(cwd: string, base: string | undefined): Rung {
   const root = gitRoot(cwd);

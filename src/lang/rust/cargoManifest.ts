@@ -4,6 +4,7 @@ import { dirname, join, relative, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
 import { collectFiles } from "../../fileWalk.js";
+import { verifyExcludeRe } from "../../verifyExclude.js";
 
 // Cargo.toml as guardrails reads it: TOML only, never `cargo metadata`, so
 // detection, doctor and init cost nothing and work without a toolchain.
@@ -196,14 +197,24 @@ export interface CargoRoot {
   manifest: Manifest;
   /** Repo-relative directory, "" for the repo root. */
   rel: string;
-  /** Member crates (not the root itself), in directory order. */
+  /** Member crates (not the root itself), in directory order; `[verify] exclude` ones left out. */
   members: Manifest[];
+  /** Members under `[verify] exclude` (vendored): never checked, so clippy runs `--exclude` them. */
+  vendored: Manifest[];
+}
+
+/** `Cargo.toml`, `crates/a/Cargo.toml`: the path `[verify] exclude` is tested against. */
+export function manifestRelPath(m: Manifest): string {
+  return m.rel === "" ? "Cargo.toml" : `${m.rel}/Cargo.toml`;
 }
 
 /**
  * The Cargo roots of a checkout. A manifest that cannot be parsed is skipped
  * here (detection must not throw) and reported by the wiring checks, which
- * read it again.
+ * read it again. A manifest under `[verify] exclude` (a vendored tree) is
+ * not the project's: it is no root, and a workspace member there is listed
+ * in `vendored` instead of `members`. Throws OverrideConfigError when the
+ * exclude is not a regular expression.
  */
 export function cargoRoots(root: string): CargoRoot[] {
   const manifests: Manifest[] = [];
@@ -214,22 +225,30 @@ export function cargoRoots(root: string): CargoRoot[] {
       if (!(err instanceof CargoManifestError)) throw err;
     }
   }
+  const exclude = verifyExcludeRe(root);
+  const excluded = (m: Manifest): boolean => exclude?.test(manifestRelPath(m)) === true;
+  // Every workspace, vendored ones too: a crate inside a vendored workspace
+  // belongs to it, not to the project as a root of its own.
   const workspaces = manifests.filter((m) => m.workspace.kind === "workspace");
   const inside = (m: Manifest, ws: Manifest): boolean =>
     m.dir === ws.dir || m.dir.startsWith(ws.dir + sep);
-  const roots: CargoRoot[] = workspaces.map((ws) => {
-    const dirs = new Set(memberDirs(ws));
-    return {
-      manifest: ws,
-      rel: ws.rel,
-      members: manifests.filter((m) => dirs.has(m.dir)),
-    };
-  });
+  const roots: CargoRoot[] = workspaces
+    .filter((ws) => !excluded(ws))
+    .map((ws) => {
+      const dirs = new Set(memberDirs(ws));
+      const all = manifests.filter((m) => dirs.has(m.dir));
+      return {
+        manifest: ws,
+        rel: ws.rel,
+        members: all.filter((m) => !excluded(m)),
+        vendored: all.filter(excluded),
+      };
+    });
   for (const m of manifests) {
     if (m.workspace.kind === "workspace") continue;
     if (workspaces.some((ws) => inside(m, ws))) continue;
-    if (m.packageName === undefined) continue;
-    roots.push({ manifest: m, rel: m.rel, members: [] });
+    if (m.packageName === undefined || excluded(m)) continue;
+    roots.push({ manifest: m, rel: m.rel, members: [], vendored: [] });
   }
   return roots.sort((a, b) => a.rel.localeCompare(b.rel));
 }

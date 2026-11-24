@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+## 0.4.4 (2026-11-25)
+
+Rust fixes found while rolling guardrails out to Rust repos.
+
+- **`[verify] exclude` applies to Cargo roots.** A `Cargo.toml` whose
+  repo-relative path matches is no Cargo root: `doctor` no longer counts
+  vendored crates, and `verify`, `verify-diff` and `snapshot` no longer
+  run clippy in them. A workspace member under the exclude is passed to
+  clippy as `--exclude`, and findings in excluded paths are dropped. An
+  exclude that is not a regular expression is now a config error (exit 2)
+  instead of a crash.
+- **`[[rust.cargo]]` sets how clippy runs per Cargo root:** `root`,
+  `target` (`--target`), `packages` (`-p`) or `exclude_packages`
+  (`--workspace --exclude`); several entries are several runs. Used by
+  `verify`, `verify-diff`, `snapshot` and `hook-postedit`. A workspace with
+  a wasm-only crate can now leave it out of the host run, or check it for its
+  own target. A member no run checks is listed as a `verify-scope`
+  override (`rule = "rust.cargo"`) that needs a reason, and `verify-diff`
+  does not run cargo for a change only there. A crate whose path dependency
+  is generated at build time cannot be left out this way, because cargo
+  loads every member's path dependencies first (README, Rust).
+- **`snapshot` records clippy warnings as warnings.** It used Clippy's
+  `-D warnings` gate tier for every finding; it now uses the level Clippy
+  gave the lint. `verify`, `verify-diff` and the hooks keep error tier.
+- **`doctor` accepts the canon in each member's own `[lints]`** when there
+  is no `[workspace.lints]` and every checked member's table meets the
+  canon (`rust.clippy-strict` and `rust.lints-inherited` pass).
+- **A placeholder reason is no reason.** `reason = "<explanation>"` (or
+  `"<why>"`, the text our hints use) counts as missing and gets
+  `override-without-reason`, in Rust attributes, inline suppressions and
+  `[[override]]` declarations.
+- **File-level `#![allow]` / `#![expect]` in test files are listed.** The
+  test relaxation (a reasoned allow in test code is not an override) no
+  longer covers an attribute at the top of a file, which switches the lint
+  off for the whole file or test crate.
+
 ## 0.4.3 (2026-11-24)
 
 - **`verify` and `snapshot` of this package's own checkout skip

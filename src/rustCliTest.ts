@@ -189,6 +189,76 @@ function steps(ws: string): void {
   );
 }
 
+// A wasm-only member (compile_error! off wasm32 stands in for one, so the
+// wasm target need not be installed) and a vendored crate with findings:
+// [verify] exclude and [[rust.cargo]] keep both out of verify and
+// verify-diff, and target reaches cargo as --target.
+function cargoConfigSteps(ws: string, targetDir: string): void {
+  write(ws, {
+    "Cargo.toml": '[workspace]\nmembers = ["crates/*"]\nresolver = "2"\n',
+    "crates/core/Cargo.toml": crate("core"),
+    "crates/core/src/lib.rs": CLEAN_A,
+    "crates/web/Cargo.toml": crate("web"),
+    "crates/web/src/lib.rs": '#[cfg(not(target_arch = "wasm32"))]\ncompile_error!("wasm only");\n',
+    "vendor/up/Cargo.toml": crate("up"),
+    "vendor/up/src/lib.rs": "pub fn f() -> i32 { Some(1).unwrap() }\n",
+    ".gitignore": "target/\n",
+  });
+  git(ws, "init", "-q", "-b", "main");
+  git(ws, "config", "user.email", "test@example.invalid");
+  git(ws, "config", "user.name", "test");
+  cli(ws, "init");
+  write(ws, { ".github/workflows/ci.yml": CI });
+  git(ws, "add", "-A");
+  git(ws, "commit", "-qm", "init");
+
+  const before = cli(ws, "verify");
+  expect(
+    "without config: the wasm-only member makes clippy unavailable (exit 2)",
+    before.status === 2 && before.out.includes("could not run") && before.out.includes("wasm only"),
+    before.out,
+  );
+  const host = /^host:\s*(\S+)/m.exec(run(ws, "rustc", ["-vV"]).stdout)?.[1] ?? "";
+  write(ws, {
+    ".agentvibes/project.toml": `[verify]\nexclude = "^vendor/"\n\n[[rust.cargo]]\nroot = "."\ntarget = "${host}"\nexclude_packages = ["web"]\n`,
+  });
+  git(ws, "add", "-A");
+  git(ws, "commit", "-qm", "config");
+  const after = cli(ws, "verify");
+  expect(
+    "[verify] exclude + [[rust.cargo]] exclude_packages: verify runs and exits 0; the vendored crate is not checked",
+    after.status === 0 &&
+      !after.out.includes("could not run") &&
+      !after.out.includes("vendor/up") &&
+      after.out.includes("leaves out web"),
+    after.out,
+  );
+  expect(
+    "target reaches cargo as --target (a per-triple build directory)",
+    host !== "" && existsSync(join(targetDir, host)),
+    host,
+  );
+  const doctor = cli(ws, "doctor", "--json");
+  const d = DoctorJson.safeParse(JSON.parse(doctor.stdout || "{}"));
+  expect(
+    "doctor: the vendored crate is no Cargo root",
+    d.success && !doctor.stdout.includes("vendor/up"),
+    doctor.out,
+  );
+  git(ws, "checkout", "-qb", "feat");
+  write(ws, {
+    "crates/web/src/lib.rs":
+      '#[cfg(not(target_arch = "wasm32"))]\ncompile_error!("wasm only, still");\n',
+    "vendor/up/src/lib.rs": "pub fn f() -> i32 { Some(2).unwrap() }\n",
+  });
+  const diff = cli(ws, "verify-diff", "--base", "main");
+  expect(
+    "verify-diff: .rs changes only in the left-out member and the vendored crate gate nothing",
+    diff.status === 0 && !diff.out.includes("could not run"),
+    diff.out,
+  );
+}
+
 function main(): number {
   const base = mkdtempSync(join(tmpdir(), "guardrails-rust-cli-"));
   try {
@@ -203,6 +273,9 @@ function main(): number {
     const ws = join(base, "ws");
     mkdirSync(ws);
     steps(ws);
+    const cfg = join(base, "cfg");
+    mkdirSync(cfg);
+    cargoConfigSteps(cfg, join(base, "target"));
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
