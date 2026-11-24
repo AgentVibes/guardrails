@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **A gated metric missing from an older `.guardrails/metrics.json` no
+  longer fails `metrics --check`.** It was read as 0, so a release that adds
+  a gated metric would turn every repo with an older baseline red. Now
+  `--check` prints a notice that the metric is not yet gated (and lists it in
+  `notYetGated` in `--json`), and `--update-baseline` adopts its current
+  value (`adopted`). A present gated value that is not a number is now an
+  unrecognised baseline shape. The per-file length baseline
+  (`.guardrails/file-sloc.json`) is keyed by file, not by metric, so a release
+  does not add keys to it; it is unchanged.
+
 ## 0.4.2 (2026-11-24)
 
 - **A checkout without `node_modules` is scanned with the running

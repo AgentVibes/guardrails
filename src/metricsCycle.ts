@@ -1,6 +1,6 @@
 import "./testIsolation.js";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { packageRoot } from "./packagePaths.js";
@@ -44,6 +44,79 @@ function expectStatus(step: string, got: { status: number; out: string }, want: 
   return true;
 }
 
+/**
+ * A baseline written before a gated metric existed has no key for it. --check
+ * must report it as not yet gated (exit 0), not compare it with 0, and
+ * --update-baseline must adopt its current value so the next worsening is red.
+ */
+function notYetGatedCycle(dir: string, wideFile: string): boolean {
+  const baselinePath = join(dir, ".guardrails", "metrics.json");
+  writeFileSync(wideFile, BAD_COMPONENT);
+  if (
+    !expectStatus(
+      "--update-baseline --force (with the wide component)",
+      metrics(dir, ["--update-baseline", "--force"]),
+      0,
+    )
+  )
+    return false;
+  const baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as {
+    gated: Record<string, number>;
+  };
+  const density = baseline.gated.useStateDensity;
+  if (density === undefined || density <= 0) {
+    console.error(`FAIL metrics-cycle: fixture should have useStateDensity > 0, got ${density}`);
+    return false;
+  }
+  delete baseline.gated.useStateDensity;
+  writeFileSync(baselinePath, JSON.stringify(baseline));
+
+  const check = metrics(dir, ["--check"]);
+  if (!expectStatus("--check with a gated key missing from the baseline", check, 0)) return false;
+  if (!check.out.includes("useStateDensity is not in the baseline yet")) {
+    console.error(
+      `FAIL metrics-cycle: --check did not print the not-yet-gated notice\n${check.out}`,
+    );
+    return false;
+  }
+  const json = metrics(dir, ["--check", "--json"]);
+  if (!expectStatus("--check --json with a missing key", json, 0)) return false;
+  const report = JSON.parse(json.out) as { notYetGated: string[] };
+  if (JSON.stringify(report.notYetGated) !== JSON.stringify(["useStateDensity"])) {
+    console.error(`FAIL metrics-cycle: notYetGated = ${JSON.stringify(report.notYetGated)}`);
+    return false;
+  }
+
+  const update = metrics(dir, ["--update-baseline"]);
+  if (!expectStatus("--update-baseline adopts the missing key", update, 0)) return false;
+  if (!update.out.includes("adopted    useStateDensity")) {
+    console.error(
+      `FAIL metrics-cycle: --update-baseline did not report the adoption\n${update.out}`,
+    );
+    return false;
+  }
+  const adopted = JSON.parse(readFileSync(baselinePath, "utf8")) as {
+    gated: Record<string, number>;
+  };
+  if (adopted.gated.useStateDensity === undefined) {
+    console.error("FAIL metrics-cycle: the adopted key is not in the written baseline");
+    return false;
+  }
+
+  // Now gated: a second useState raises the density and must be red.
+  writeFileSync(
+    join(dir, "src", "Two.tsx"),
+    `import { useState } from "react";
+export const Two = () => {
+  const [a] = useState(0);
+  const [b] = useState(1);
+  return <p>{a + b}</p>;
+};
+`,
+  );
+  return expectStatus("--check after worsening the adopted metric", metrics(dir, ["--check"]), 1);
+}
+
 function main(): number {
   const dir = mkdtempSync(join(tmpdir(), "guardrails-metrics-cycle-"));
   try {
@@ -85,6 +158,8 @@ function main(): number {
     }
     writeFileSync(wideFile, BAD_COMPONENT);
     if (!expectStatus("--check after worsening again", metrics(dir, ["--check"]), 1)) return 1;
+
+    if (!notYetGatedCycle(dir, wideFile)) return 1;
 
     console.log("metrics baseline cycle passed");
     return 0;
