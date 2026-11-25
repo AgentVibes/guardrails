@@ -475,7 +475,9 @@ packages = ["web"]                  # -p web instead of --workspace
 or package name that does not exist is a config error (exit 2 with the
 reason), never a run that checks less than it says. `verify`,
 `verify-diff`, `snapshot` and `hook-postedit` use the same runs; rustfmt
-still runs once per root. **A member that no run checks is not checked at
+still runs once per root. A crate that two runs both check (a host run and a
+wasm32 run) reports a lint once: identical findings (same rule, file, line,
+column and message) from several runs are merged. **A member that no run checks is not checked at
 all**: `verify-diff` does not run cargo for a change only there, its
 findings are dropped, and the [override inventory](#overrides) lists it as a
 `verify-scope` override (`rule = "rust.cargo"`) that needs a reason:
@@ -754,6 +756,13 @@ per-rule path map in user config would be the growing allowlist this refuses.
 `pnpm test:screens` asserts both directions of each scope AND that every
 registered scope has at least one rule carrying its marker — a scope nothing
 declares filters nothing while looking like it works.
+
+`exclude = "<regex>"` is the vendored-tree carve-out, tested against the
+repo-relative path: a verbatim copy of another package is not this repo's
+code. Its findings (every rule, every language) and its inline suppressions
+are left out of `verify`, `verify-diff`, `snapshot`, the hooks and the
+[override inventory](#overrides); the Rust side is under
+[Rust](#rust) ("Vendored crates").
 
 Per-repo severity RAISE: a repo that held a rule stricter than the canon keeps
 its gate via `[severity]` in `.agentvibes/project.toml`

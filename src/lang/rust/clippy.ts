@@ -25,14 +25,35 @@ import type { CargoSelection, CargoTarget } from "./cargoConfig.js";
 // that cargo cannot load, a missing toolchain, a timeout) makes the result
 // `unavailable` with the reason. It is never "zero findings".
 
+/**
+ * A Rust finding with the column of its primary span. `Finding` has no
+ * column; the dedupe keys need one, so two identical lints on one line stay
+ * two findings while one lint seen by two cargo runs (host and wasm32, say)
+ * stays one. rustFindings.ts drops the column before reporting. rustfmt
+ * findings have no column (0).
+ */
+export type RustFinding = Finding & { column: number };
+
+/** The `Finding` without the internal column. */
+export function withoutColumn(f: RustFinding): Finding {
+  const { column: _column, ...finding } = f;
+  return finding;
+}
+
+/** One key per distinct finding: rule, file, line, column and message. */
+export function rustFindingKey(f: RustFinding): string {
+  return `${f.rule}\0${f.file}\0${f.line}\0${f.column}\0${f.message}`;
+}
+
 export type CargoResult =
-  | { status: "ran"; findings: Finding[] }
+  | { status: "ran"; findings: RustFinding[] }
   | { status: "unavailable"; reason: string };
 
 const Span = z
   .object({
     file_name: z.string(),
     line_start: z.number(),
+    column_start: z.number(),
     is_primary: z.boolean(),
     text: z.array(z.object({ text: z.string() }).loose()).default([]),
   })
@@ -102,7 +123,7 @@ export function parseClippyJson(
   repoRoot: string,
   severity: ClippySeverity = "canon",
 ): CargoResult {
-  const findings = new Map<string, Finding>();
+  const findings = new Map<string, RustFinding>();
   const errors: string[] = [];
   for (const line of output.split("\n")) {
     if (!line.startsWith("{")) continue;
@@ -129,16 +150,18 @@ export function parseClippyJson(
                 : join(cargoRoot, primary.file_name),
             ),
             line: primary.line_start,
+            column: primary.column_start,
           };
     if (code !== undefined && isLintCode(code)) {
       if (at === undefined || !under(repoRoot, at.file)) continue;
       const level = originalLevel(d);
       const canon = severity === "canon";
-      const f: Finding = {
+      const f: RustFinding = {
         rule: code,
         severity: canon || level === "deny" ? "error" : "warning",
         file: at.file,
         line: at.line,
+        column: at.column,
         message: `${d.message} (${code} is ${match({ level, canon })
           .with({ level: "deny" }, () => "deny")
           .with({ level: "warn", canon: true }, () => "warn, denied by -D warnings")
@@ -147,7 +170,7 @@ export function parseClippyJson(
         source: code.startsWith("clippy::") ? "clippy" : "rustc",
       };
       // --all-targets checks a lib twice (lib, lib test): the same finding twice.
-      findings.set(`${f.rule}\0${f.file}\0${f.line}\0${d.message}`, f);
+      findings.set(rustFindingKey(f), f);
       continue;
     }
     if (d.level === "error" || d.level === "error: internal compiler error") {
@@ -320,7 +343,8 @@ export function runFmtCheck(cargoRoot: string, opts: CargoOptions): CargoResult 
   return match(spawnCargo(cargoRoot, ["fmt", "--all", "--check"], opts))
     .with({ status: "failed" }, (r): CargoResult => ({ status: "unavailable", reason: r.reason }))
     .with({ status: "done" }, (res): CargoResult => {
-      const findings = res.code === 0 ? [] : parseFmtCheck(res.stdout);
+      const findings: RustFinding[] =
+        res.code === 0 ? [] : parseFmtCheck(res.stdout).map((f) => ({ ...f, column: 0 }));
       // Exit 1 with diffs and a quiet stderr is "not formatted"; anything else
       // (a parse error, rustfmt missing) means the check did not run.
       return res.code === 0 || (findings.length > 0 && res.stderr.trim() === "")

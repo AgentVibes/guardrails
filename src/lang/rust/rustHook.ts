@@ -10,7 +10,7 @@ import { hasLanguage, resolveLanguages } from "../languages.js";
 import type { CargoTarget } from "./cargoConfig.js";
 import { type CargoRoot, cargoRoots, owningPackage } from "./cargoManifest.js";
 import { planCargoRuns, type RootPlan } from "./cargoPlan.js";
-import { runClippy } from "./clippy.js";
+import { runClippy, withoutColumn } from "./clippy.js";
 import { clippyTimeoutMs } from "./rustFindings.js";
 
 // hook-postedit for a .rs file: clippy for the package that owns the file
@@ -144,7 +144,7 @@ export function rustPostedit(tool: string, editedFile: string): RustPostedit {
     )
     .with({ status: "ran" }, (r): RustPostedit => {
       const lines = changedLines(tool, repoRoot, file);
-      const inFile = r.findings.filter((f) => f.file === file);
+      const inFile = r.findings.filter((f) => f.file === file).map(withoutColumn);
       // An EMPTY set is a real answer (nothing of the edit's left to gate).
       if (lines !== undefined)
         return { status: "findings", findings: inFile.filter((f) => lines.has(f.line)) };

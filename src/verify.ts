@@ -22,6 +22,7 @@ import { SeverityConfigError, severityRaiseArgs } from "./severity.js";
 import { structureFindings } from "./structure.js";
 import { textGrepFindings } from "./textGrep.js";
 import { RUST_SUPPRESS_HINT } from "./verifyDiff.js";
+import { verifyExcludeRe } from "./verifyExclude.js";
 import { detectWiring } from "./wiring.js";
 
 export function collectVerifyFindings(
@@ -47,10 +48,16 @@ export function collectVerifyFindings(
   // rule tests run on; `bad.ts` violates on purpose. They are not the repo's
   // code, so the full scan skips them as verify-diff does. Consumers: no-op.
   const isRuleFixture = ruleFixtureFilter(cwd);
-  return dropJsxSuppressed(
-    dropScopeExempt(findings, scopePatterns(cwd), scopeExemptRuleIds()),
-    cwd,
-  ).filter((f) => !isRuleFixture(f.file));
+  // `[verify] exclude` (vendored trees) holds for the full scan as it does
+  // for verify-diff and the Rust checks: a verbatim copy of another package is
+  // not this repo's code. Paths come from the scanners relative to the
+  // process cwd; the regex is written against repo-root-relative ones.
+  const exclude = verifyExcludeRe(cwd);
+  const excluded = (file: string): boolean =>
+    exclude?.test(relative(cwd, resolve(file)).split(sep).join("/")) === true;
+  return dropJsxSuppressed(dropScopeExempt(findings, scopePatterns(cwd), scopeExemptRuleIds()), cwd)
+    .filter((f) => !isRuleFixture(f.file))
+    .filter((f) => !excluded(f.file));
 }
 
 /** Rust findings under `paths`, with paths relative to cwd like the TypeScript ones. */

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.4.5 (2026-11-25)
+
+- **`[verify] exclude` applies to the full scan.** `verify` (without a
+  diff) and `snapshot` now leave out TypeScript findings in excluded paths,
+  and the override inventory leaves out inline suppressions there
+  (`ast-grep-ignore`, `biome-ignore`, Rust `#[allow]`/`#[expect]`), as
+  `verify-diff` and the Rust checks already did. `doctor` and the wiring
+  report read the same inventory.
+- **One finding per lint when two `[[rust.cargo]]` runs check a crate.** A
+  crate checked by a host run and a wasm32 run reported each lint twice.
+  Identical findings from several runs (same rule, file, line, column and
+  message) are now merged. Inside one run the column is now part of the key
+  too, so the same lint at two places on one line is two findings.
+
 ## 0.4.4 (2026-11-25)
 
 Rust fixes found while rolling guardrails out to Rust repos.
