@@ -124,10 +124,15 @@ function key(r: OverrideReport): string[] {
   return r.overrides.map((o) => `${o.kind} ${o.rule} ${o.reason.status}`).sort();
 }
 
-function cli(dir: string, args: string[]): { status: number; out: string } {
+function cli(
+  dir: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): { status: number; out: string } {
   const res = spawnSync("node", [join(packageRoot, "dist", "cli.js"), ...args], {
     cwd: dir,
     encoding: "utf8",
+    env,
   });
   if (res.error) throw res.error;
   return { status: res.status ?? -1, out: res.stdout };
@@ -154,6 +159,69 @@ function fixtureScope(): void {
         `a rule-fixture suppression in a repo named ${name} is ${counted ? "" : "not "}an override`,
         seen === counted,
         collectOverrides(dir).overrides,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+}
+
+// `[verify] exclude` holds for the full scan, not only for verify-diff and
+// Rust: a vendored .ts file's findings and its suppressions are not the repo's,
+// in verify, snapshot and the inventory. RED both ways: without the exclude the
+// same tree reports both.
+function excludeScope(): void {
+  const vendored = {
+    "src/own.ts": "export const own = 1;\n",
+    "vendor/up/lib.ts": [
+      "// ast-grep-ignore",
+      "export const v = 1;",
+      "export const w = (globalThis as any).x;",
+      "",
+    ].join("\n"),
+  };
+  for (const [label, toml, excluded] of [
+    ["with [verify] exclude", '[verify]\nexclude = "^vendor/"\n', true],
+    ["without an exclude", "", false],
+  ] as const) {
+    const dir = materialise({ ...vendored, ".agentvibes/project.toml": toml });
+    try {
+      const inventory = collectOverrides(dir).overrides.filter((o) => o.file.startsWith("vendor/"));
+      expect(
+        `${label}: a vendored suppression is ${excluded ? "not " : ""}in the inventory`,
+        (inventory.length === 0) === excluded,
+        inventory,
+      );
+      const verify = cli(dir, ["verify", "--json"]);
+      const vj = JSON.parse(verify.out) as {
+        findings: { file: string; rule: string }[];
+        overrides: { file: string }[];
+      };
+      const fromVendor =
+        vj.findings.filter((f) => f.file.startsWith("vendor/")).length +
+        vj.overrides.filter((o) => o.file.startsWith("vendor/")).length;
+      expect(
+        `${label}: full verify ${excluded ? "reports nothing from" : "reports findings and overrides in"} vendor/`,
+        excluded
+          ? fromVendor === 0 && verify.status === 0
+          : vj.findings.some((f) => f.file === "vendor/up/lib.ts" && f.rule === "as-any-escape") &&
+              vj.overrides.some((o) => o.file === "vendor/up/lib.ts") &&
+              verify.status === 1,
+        verify,
+      );
+      const snap = cli(dir, ["snapshot", "--json"], {
+        ...process.env,
+        XDG_STATE_HOME: join(dir, ".state"),
+        GUARDRAILS_RECORD: join(dir, ".state", "runs.sqlite"),
+      });
+      const parts = (JSON.parse(snap.out) as { parts: string[] }).parts;
+      const errors = /^findings (\d+) error/.exec(
+        parts.find((x) => x.startsWith("findings")) ?? "",
+      );
+      expect(
+        `${label}: snapshot ${excluded ? "records no" : "records the"} vendored error`,
+        snap.status === 0 && errors !== null && (Number(errors[1]) === 0) === excluded,
+        snap,
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -260,6 +328,7 @@ function main(): number {
     rmSync(dir, { recursive: true, force: true });
   }
   fixtureScope();
+  excludeScope();
   if (failed > 0) return 1;
   console.log("\noverrides inventory passed");
   return 0;

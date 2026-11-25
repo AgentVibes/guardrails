@@ -7,7 +7,15 @@ import { addedLinesByFile, changedFiles, RUST_PATHSPECS } from "../../gitDiff.js
 import type { Rung } from "../../verifyDiff.js";
 import { type CargoRoot, cargoRoots } from "./cargoManifest.js";
 import { type PlannedRun, planCargoRuns } from "./cargoPlan.js";
-import { type CargoResult, runClippy, runFmtCheck, selectionArgs } from "./clippy.js";
+import {
+  type CargoResult,
+  type RustFinding,
+  runClippy,
+  runFmtCheck,
+  rustFindingKey,
+  selectionArgs,
+  withoutColumn,
+} from "./clippy.js";
 
 // The Rust contribution to verify, verify-diff, hook-stop and snapshot:
 // clippy and rustfmt over every Cargo root, findings with absolute paths,
@@ -54,18 +62,34 @@ function label(r: CargoRoot): string {
   return r.rel === "" ? "Cargo.toml" : `${r.rel}/Cargo.toml`;
 }
 
+/**
+ * Identical findings from several cargo runs, once. A crate that two
+ * `[[rust.cargo]]` runs both check (a host run and a wasm32 run) reports the
+ * same lint at the same place from each; it is one finding. Same rule, file,
+ * line, column and message = identical; the first run's copy is kept.
+ */
+export function dedupeRustFindings(findings: readonly RustFinding[]): Finding[] {
+  const seen = new Map<string, Finding>();
+  for (const f of findings) {
+    const key = rustFindingKey(f);
+    if (!seen.has(key)) seen.set(key, withoutColumn(f));
+  }
+  return [...seen.values()];
+}
+
 function collect(
-  into: RustFindings,
+  into: RustFinding[],
+  unavailable: string[],
   where: string,
   keep: (f: Finding) => boolean,
   result: CargoResult,
 ): void {
   match(result)
     .with({ status: "ran" }, (res) => {
-      into.findings.push(...res.findings.filter(keep));
+      into.push(...res.findings.filter(keep));
     })
     .with({ status: "unavailable" }, (res) => {
-      into.unavailable.push(`${where}: ${res.reason}`);
+      unavailable.push(`${where}: ${res.reason}`);
     })
     .exhaustive();
 }
@@ -81,6 +105,7 @@ function clippyLabel(r: CargoRoot, run: PlannedRun, configured: boolean): string
  * clippy (once per planned run) + rustfmt over the given roots. Findings in
  * `[verify] exclude` paths and in members no run checks are dropped: cargo
  * still compiles them as dependencies, and rustfmt formats the whole root.
+ * A finding two runs both report is reported once (dedupeRustFindings).
  */
 export function runRustChecks(
   repoRoot: string,
@@ -88,7 +113,8 @@ export function runRustChecks(
   mode: RustRunMode,
 ): RustFindings {
   const plan = planCargoRuns(repoRoot, roots);
-  const out: RustFindings = { findings: [], unavailable: [], filesScanned: -1 };
+  const found: RustFinding[] = [];
+  const unavailable: string[] = [];
   for (const r of roots) {
     const rootPlan = plan.get(r);
     if (rootPlan === undefined) throw new Error(`no cargo plan for ${label(r)}`);
@@ -100,14 +126,16 @@ export function runRustChecks(
     };
     for (const run of rootPlan.runs) {
       collect(
-        out,
+        found,
+        unavailable,
         clippyLabel(r, run, rootPlan.configured),
         keep,
         runClippy(r.manifest.dir, repoRoot, { ...common, ...run }),
       );
     }
     collect(
-      out,
+      found,
+      unavailable,
       `${label(r)} rustfmt`,
       keep,
       runFmtCheck(r.manifest.dir, {
@@ -117,7 +145,7 @@ export function runRustChecks(
       }),
     );
   }
-  return out;
+  return { findings: dedupeRustFindings(found), unavailable, filesScanned: -1 };
 }
 
 function inside(dir: string, file: string): boolean {

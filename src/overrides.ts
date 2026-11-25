@@ -22,6 +22,7 @@ import { readBiomeRoot } from "./presetDrift.js";
 import { declaredRuleDirs, repoRuleConfig } from "./repoRules.js";
 import { SCOPES } from "./screenScope.js";
 import { readTomlTable } from "./tomlTable.js";
+import { verifyExcludeRe } from "./verifyExclude.js";
 
 // The overrides inventory: every way a repo deviates from the canon, and the
 // written reason for each. A deviation is legitimate when someone wrote down
@@ -317,7 +318,9 @@ function warning(rule: string, o: { file: string; line: number }, message: strin
 /**
  * Every override in `root`, with its reason or the lack of one. `targets`
  * limits the inline-suppression scan (config overrides are repo-wide).
- * Throws OverrideConfigError when `[[override]]` cannot be read.
+ * Inline suppressions in `[verify] exclude` paths (vendored trees) are not
+ * the repo's overrides and are left out, as their findings are.
+ * Throws OverrideConfigError when `[[override]]` or the exclude cannot be read.
  */
 export function collectOverrides(root: string, targets: string[] = ["."]): OverrideReport {
   const declarations = readOverrideDeclarations(root);
@@ -325,6 +328,8 @@ export function collectOverrides(root: string, targets: string[] = ["."]): Overr
   // Rust overrides only where Rust is enabled: a TypeScript-only repo scans
   // exactly what it always did.
   const rust = hasLanguage(resolveLanguages(root).languages, "rust");
+  const exclude = verifyExcludeRe(root);
+  const notExcluded = (o: Override): boolean => exclude?.test(o.file) !== true;
   const configured = [
     ...verifyScopes(root),
     ...biomeRules(root),
@@ -340,8 +345,10 @@ export function collectOverrides(root: string, targets: string[] = ["."]): Overr
       const { paths: _paths, ...rest } = c;
       return { ...rest, reason: reasonOf(d?.reason) };
     }),
-    ...inlineOverrides(root, targets),
-    ...(rust ? rustInlineOverrides(root, targets) : []),
+    ...[
+      ...inlineOverrides(root, targets),
+      ...(rust ? rustInlineOverrides(root, targets) : []),
+    ].filter(notExcluded),
   ];
   const overridden: Finding[] = overrides.map((o) =>
     warning(

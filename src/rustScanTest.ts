@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { match } from "ts-pattern";
 import { parseClippyJson, parseFmtCheck } from "./lang/rust/clippy.js";
+import { dedupeRustFindings } from "./lang/rust/rustFindings.js";
 import { rustAllowOverrides } from "./lang/rust/rustOverrides.js";
 import { CANON_OVERRIDDEN, collectOverrides, OVERRIDE_WITHOUT_REASON } from "./overrides.js";
 import { packageRoot } from "./packagePaths.js";
@@ -229,9 +230,51 @@ function parsers(): void {
   );
 }
 
+// One crate checked by two [[rust.cargo]] runs (host and wasm32) reports each
+// lint once per run; the runs' findings are merged to one per rule, file,
+// line, column and message. RED: the concatenation has every finding twice.
+function crossRunDedupe(): void {
+  const once = parseClippyJson(fixture("clippy-lint.jsonl"), "/work/ws", "/work/ws");
+  if (once.status !== "ran") {
+    expect("clippy-lint.jsonl parses as ran", false, once);
+    return;
+  }
+  const twice = [...once.findings, ...once.findings];
+  const merged = dedupeRustFindings(twice);
+  expect(
+    "two runs reporting the same lints: each finding once",
+    twice.length === 2 * once.findings.length && merged.length === once.findings.length,
+    { runs: twice.length, merged: merged.length },
+  );
+  expect(
+    "the merged findings carry no internal column",
+    merged.every((f) => !Object.hasOwn(f, "column")),
+    merged,
+  );
+  // The same lint at another column of the same line is another finding,
+  // in one run and across runs.
+  const line = fixture("clippy-lint.jsonl")
+    .split("\n")
+    .find((l) => l.includes('"clippy::cast_sign_loss"'));
+  if (line === undefined) {
+    expect("the fixture has a cast_sign_loss line", false, null);
+    return;
+  }
+  const moved = line.replace(/"column_start":(\d+)/g, (_m, n) => `"column_start":${Number(n) + 7}`);
+  const both = parseClippyJson(`${line}\n${moved}\n`, "/work/ws", "/work/ws");
+  const atTwoColumns = both.status === "ran" ? both.findings : [];
+  expect(
+    "one lint at two columns of a line: two findings, kept apart by the dedupe",
+    atTwoColumns.length === 2 &&
+      dedupeRustFindings([...atTwoColumns, ...atTwoColumns]).length === 2,
+    atTwoColumns,
+  );
+}
+
 scanner();
 cargoLints();
 parsers();
+crossRunDedupe();
 if (failed > 0) {
   console.error(`\n${failed} Rust scan check(s) failed`);
   process.exit(1);
