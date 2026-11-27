@@ -157,9 +157,7 @@ function detectionCases(): void {
     const r5 = resolvedProvider("typecheck", ts5);
     check(
       "typecheck typescript < 7 runs tsc with upgrade warning",
-      r5.id === "tsc" &&
-        typeof r5.warning === "string" &&
-        r5.warning.includes("typescript >= 7"),
+      r5.id === "tsc" && typeof r5.warning === "string" && r5.warning.includes("typescript >= 7"),
       JSON.stringify(r5),
     );
     const rFlag = resolvedProvider("typecheck", ts7, ["-p", "tsconfig.build.json"]);

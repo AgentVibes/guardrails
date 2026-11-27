@@ -116,8 +116,8 @@ export function installedPackageVersion(root: string, pkgName: string): string |
       try {
         const parsed = JSON.parse(readFileSync(candidate, "utf8")) as { version?: unknown };
         if (typeof parsed.version === "string") return parsed.version;
-      } catch {
-        // Malformed installed package.json: continue walking up.
+      } catch (err) {
+        console.warn(`guardrails: ignoring unreadable ${candidate}: ${(err as Error).message}`);
       }
     }
     const parent = dirname(dir);
