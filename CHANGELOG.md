@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Task runner subcommands (`build`, `lint`, `typecheck`, `test`, `format`,
+  `run`) and `guardrails providers`.** Each verb auto-detects the fastest
+  provider in the checkout (`biome`, `oxlint`, `dprint`, `tsc` >= 7 / `tsgo` /
+  legacy `tsc` with upgrade warning, `next --turbopack`, `vite`, `tsdown`,
+  `vitest`, `bun`, `node --test`, `cargo`, `node` native type stripping >=
+  22.18/23.6), forwards extra args after `--`, records durations via `time` as
+  `task:<verb>`, and fails loudly with the install hint and `[tasks.<verb>]`
+  config key when a binary is missing. Override in `.agentvibes/project.toml`
+  with `[tasks.<verb>] provider = "..."` / `command = "..."` (or
+  `[build] command = "..."`). `guardrails providers [--json]` lists every
+  verb, provider, active selection, and reason.
 - **`retired-ui-scope` and `retired-ui-scope-tsx` ban imports from retired UI
   package scopes.** Error-tier ast-grep rule pair covering `import`
   declarations, `export … from`, dynamic `import()` and `require()`, for both

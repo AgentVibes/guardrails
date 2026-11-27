@@ -21,9 +21,9 @@ export type ChildResult =
   | { kind: "not-started"; error: string };
 
 /** Runs the command with inherited stdio, without a shell: argv goes to it as typed. */
-function runChild(file: string, args: readonly string[]): Promise<ChildResult> {
+function runChild(file: string, args: readonly string[], cwd?: string): Promise<ChildResult> {
   return new Promise((resolve) => {
-    const child = spawn(file, args, { stdio: "inherit" });
+    const child = spawn(file, args, { cwd, stdio: "inherit" });
     child.on("error", (err) => resolve({ kind: "not-started", error: err.message }));
     child.on("exit", (code, signal) =>
       resolve(
@@ -58,6 +58,58 @@ function describe(r: ChildResult): string {
     .exhaustive();
 }
 
+export async function runTimedChild(opts: {
+  metricName: string;
+  label: string;
+  command: string;
+  file: string;
+  args: readonly string[];
+  cwd?: string;
+  json: boolean;
+  run: RunCollector;
+  after?: () => number | Promise<number>;
+}): Promise<number> {
+  const started = performance.now();
+  const primary = await runChild(opts.file, opts.args, opts.cwd);
+  const primaryOk = match(primary)
+    .with({ kind: "exited" }, (x) => x.code === 0)
+    .with({ kind: "signalled" }, { kind: "not-started" }, () => false)
+    .exhaustive();
+  let result: ChildResult = primary;
+  if (primaryOk && opts.after !== undefined) {
+    const afterCode = await opts.after();
+    if (afterCode !== 0) result = { kind: "exited", code: afterCode };
+  }
+  const ms = Math.round(performance.now() - started);
+  const ok = match(result)
+    .with({ kind: "exited" }, (x) => x.code === 0)
+    .with({ kind: "signalled" }, { kind: "not-started" }, () => false)
+    .exhaustive();
+  if (ok) {
+    opts.run.addMetrics("full", { [opts.metricName]: ms });
+  } else {
+    opts.run.metrics = { status: "unavailable", reason: `${opts.file}: ${describe(result)}` };
+  }
+
+  const recorded = ok && opts.run.recording;
+  if (opts.json) {
+    console.error(
+      JSON.stringify({
+        command: opts.command,
+        metric: opts.metricName,
+        ms,
+        result: describe(result),
+        recorded,
+      }),
+    );
+  } else {
+    console.error(
+      `${opts.label}: ${opts.metricName}=${ms} (${describe(result)})${recorded ? "" : ok ? ", not recorded (GUARDRAILS_RECORD is off)" : ", not recorded as a time"}`,
+    );
+  }
+  return exitCodeOf(result);
+}
+
 export async function runTime(opts: {
   name: string | undefined;
   /** Arguments before `--`: a command typed without the separator. */
@@ -79,28 +131,13 @@ export async function runTime(opts: {
     return 2;
   }
 
-  const started = performance.now();
-  const result = await runChild(file, args);
-  const ms = Math.round(performance.now() - started);
-  const ok = match(result)
-    .with({ kind: "exited" }, (x) => x.code === 0)
-    .with({ kind: "signalled" }, { kind: "not-started" }, () => false)
-    .exhaustive();
-  if (ok) {
-    opts.run.addMetrics("full", { [name]: ms });
-  } else {
-    opts.run.metrics = { status: "unavailable", reason: `${file}: ${describe(result)}` };
-  }
-
-  const recorded = ok && opts.run.recording;
-  if (opts.json) {
-    console.error(
-      JSON.stringify({ command: "time", metric: name, ms, result: describe(result), recorded }),
-    );
-  } else {
-    console.error(
-      `guardrails time: ${name}=${ms} (${describe(result)})${recorded ? "" : ok ? ", not recorded (GUARDRAILS_RECORD is off)" : ", not recorded as a time"}`,
-    );
-  }
-  return exitCodeOf(result);
+  return runTimedChild({
+    metricName: name,
+    label: "guardrails time",
+    command: "time",
+    file,
+    args,
+    json: opts.json,
+    run: opts.run,
+  });
 }

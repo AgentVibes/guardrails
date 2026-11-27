@@ -12,6 +12,8 @@ import { runLeaks } from "./leaks.js";
 import { runMetrics } from "./metrics.js";
 import { NOT_RECORDING, RunCollector, recordRun, resolveTarget } from "./record/record.js";
 import { runSnapshot } from "./snapshot.js";
+import { runProvidersCommand, runTask } from "./tasks/registry.js";
+import { isTaskVerb } from "./tasks/types.js";
 import { runTime } from "./time.js";
 import { ToolMissingError } from "./toolResolve.js";
 import { runVerify } from "./verify.js";
@@ -45,6 +47,15 @@ Usage:
                                       recording database, whether or not it
                                       uses guardrails; writes nothing into it;
                                       exit 2 only when the record fails
+
+  guardrails build|lint|typecheck|test|format [-- args...]
+                                      run the fastest detected provider for the
+                                      task (or [tasks.<verb>] in project.toml);
+                                      records duration as task:<verb>
+  guardrails run <file> [args...]     execute script with native node type
+                                      stripping (>= 22.18/23.6) or bun
+  guardrails providers                list task verbs, providers, active choice
+                                      and why
 
   guardrails time [--name N] -- CMD   run CMD, pass its output and exit code
                                       through; while recording, store its
@@ -83,15 +94,36 @@ baseline, or a check that could not run (a Rust build that fails)
 `;
 
 /** Commands whose runs are recorded when GUARDRAILS_RECORD is on (README "Recording"). */
-const RECORDED = new Set(["verify", "verify-diff", "metrics", "hook-stop", "time"]);
+const RECORDED = new Set([
+  "verify",
+  "verify-diff",
+  "metrics",
+  "hook-stop",
+  "time",
+  "build",
+  "lint",
+  "typecheck",
+  "test",
+  "format",
+  "run",
+]);
 
 async function main(argv: string[]): Promise<number> {
   const args = [...argv];
-  // `time` runs another command: everything after the first `--` is that
-  // command's argv, never our flags (`time -- tsc --help` must not print our help).
-  // The command is the first argument that is not --json (`--json time …`).
-  const separator = args.find((a) => a !== "--json") === "time" ? args.indexOf("--") : -1;
-  const child = separator < 0 ? undefined : args.splice(separator).slice(1);
+  // `time` and task verbs pass everything after `--` directly to the child
+  // command; `run <file> [args...]` also forwards flags from `<file>` onward.
+  const firstCmd = args.find((a) => a !== "--json");
+  let child: string[] | undefined;
+  if (firstCmd === "time" || (firstCmd !== undefined && isTaskVerb(firstCmd))) {
+    const separator = args.indexOf("--");
+    if (separator >= 0) {
+      child = args.splice(separator).slice(1);
+    } else if (firstCmd === "run") {
+      const cmdIdx = args.indexOf("run");
+      const fileIdx = args.findIndex((a, i) => i > cmdIdx && !a.startsWith("-"));
+      if (fileIdx >= 0) child = args.splice(fileIdx);
+    }
+  }
   const json = args.includes("--json");
   const filtered = args.filter((a) => a !== "--json");
   const command = filtered.shift();
@@ -202,6 +234,10 @@ async function main(argv: string[]): Promise<number> {
     .with("hook-postedit", () => runHookPostedit())
     .with("hook-stop", () => runHookStop(run))
     .with("time", () => runTime({ name: metricName, stray: filtered, child, json, run }))
+    .with("providers", () => runProvidersCommand(json))
+    .with("build", "lint", "typecheck", "test", "format", "run", (verb) =>
+      runTask({ verb, args: [...filtered, ...(child ?? [])], json, run }),
+    )
     .with("iterate", () =>
       runIterate({
         task,
