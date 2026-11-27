@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
 import { isPlaceholderReason } from "./overrideDeclarations.js";
@@ -295,8 +295,7 @@ function scanPackageJson(
 
   for (const rule of rules) {
     const matchedDeps = Object.keys(allDeps).filter(
-      (dep) =>
-        rule.packages.includes(dep) || rule.packagePrefixes.some((p) => dep.startsWith(p)),
+      (dep) => rule.packages.includes(dep) || rule.packagePrefixes.some((p) => dep.startsWith(p)),
     );
     const matchedCmds = rule.commands.filter((c) => scriptCommands.has(c));
 
