@@ -133,7 +133,7 @@ function checkSgconfig(root: string): WiringCheck {
       );
 }
 
-const RUNS_GUARDRAILS = /\bguardrails\s+(verify|verify-diff|doctor|metrics|leaks)\b/;
+const RUNS_GUARDRAILS = /\bguardrails\s+(verify|verify-diff|doctor|metrics|leaks|lint)\b/;
 /** `pnpm x`, `pnpm run x`, `npm run x`, `yarn x` — a call to another package script. */
 const SCRIPT_CALL = /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?([A-Za-z0-9:_-]+)/g;
 /** A file a script runs: `scripts/lint/x.sh`, `./tools/check.mjs`. */

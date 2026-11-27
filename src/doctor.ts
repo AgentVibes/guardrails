@@ -19,6 +19,7 @@ import { collectOverrides, type OverrideReport } from "./overrides.js";
 import { packageRoot, rulesDir, structureRulesDir } from "./packagePaths.js";
 import { driftMessage, presetDrift } from "./presetDrift.js";
 import { declaredRuleDirs } from "./repoRules.js";
+import { scanToolchain, ToolchainConfigError, type ToolchainReport } from "./toolchain.js";
 import { pinnedVersion, tryResolveTool } from "./toolResolve.js";
 import { detectWiring, type WiringReport } from "./wiring.js";
 
@@ -128,6 +129,19 @@ function readOverrides(root: string): OverridesRead {
   }
 }
 
+type ToolchainRead =
+  | ({ status: "read" } & ToolchainReport)
+  | { status: "unreadable"; error: string };
+
+function readToolchain(root: string): ToolchainRead {
+  try {
+    return { status: "read", ...scanToolchain(root) };
+  } catch (err) {
+    if (err instanceof ToolchainConfigError) return { status: "unreadable", error: err.message };
+    throw err;
+  }
+}
+
 export function runDoctor(json: boolean, root: string = process.cwd()): number {
   const version = (
     JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { version: string }
@@ -139,14 +153,23 @@ export function runDoctor(json: boolean, root: string = process.cwd()): number {
   const typescript = hasLanguage(enabled, "typescript");
   const rust = hasLanguage(enabled, "rust");
   const overrides = readOverrides(root);
+  const toolchain = readToolchain(root);
+  const toolchainIssues = match(toolchain)
+    .with({ status: "read" }, (t) => t.findings.length + t.withoutReason)
+    .with({ status: "unreadable" }, () => 1)
+    .exhaustive();
   // Wiring (wiring.ts) is a report: it never changes doctor's exit code.
-  const wiring = detectWiring(
+  const rawWiring = detectWiring(
     root,
     match(overrides)
       .with({ status: "read" }, (r) => r)
       .with({ status: "unreadable" }, () => undefined)
       .exhaustive(),
   );
+  const wiring: WiringReport =
+    toolchainIssues > 0 && rawWiring.state === "on"
+      ? { ...rawWiring, state: "partial" }
+      : rawWiring;
   const result = {
     command: "doctor",
     package: { name: "@agentvibes/guardrails", version, root: packageRoot },
@@ -171,6 +194,7 @@ export function runDoctor(json: boolean, root: string = process.cwd()): number {
     // rule `verify` applies.
     presetDrift: { findings: typescript ? presetDrift(root) : [] },
     overrides,
+    toolchain,
     wiring,
   };
 
@@ -206,16 +230,38 @@ export function runDoctor(json: boolean, root: string = process.cwd()): number {
       for (const f of result.presetDrift.findings) console.log(`  ${f.detail}`);
     }
     printOverrides(result.overrides);
-    printWiring(result.wiring);
+    printToolchain(result.toolchain);
+    printWiring(result.wiring, toolchainIssues);
   }
   // The tools a language needs are required only when that language is enabled.
   const tsFound = !typescript || (result.tools["ast-grep"].found && result.tools.biome.found);
   const rustFound = Object.values(result.tools.rust ?? {}).every((t) => t.found);
   const allFound = tsFound && rustFound && languages.status === "read";
   const drifted = result.presetDrift.findings.length > 0;
+  const toolchainFailed = match(toolchain)
+    .with({ status: "unreadable" }, () => true)
+    .with(
+      { status: "read" },
+      (t) => t.severity === "error" && (t.findings.length > 0 || t.withoutReason > 0),
+    )
+    .exhaustive();
   if (drifted && !json)
     console.error(`guardrails doctor: ${driftMessage(result.presetDrift.findings)}`);
-  return allFound && !drifted ? 0 : 1;
+  if (toolchainFailed && !json) {
+    const summary = match(toolchain)
+      .with({ status: "unreadable" }, (t) => t.error)
+      .with({ status: "read" }, (t) =>
+        [
+          ...t.findings.map((f) => `${f.where}: ${f.detail}`),
+          ...t.allowed
+            .filter((a) => !a.hasReason)
+            .map((a) => `[[toolchain.allow]] "${a.tool}" has no reason`),
+        ].join("; "),
+      )
+      .exhaustive();
+    console.error(`guardrails doctor: toolchain error — ${summary}`);
+  }
+  return allFound && !drifted && !toolchainFailed ? 0 : 1;
 }
 
 function printLanguages(read: LanguagesRead): void {
@@ -245,7 +291,28 @@ function printOverrides(read: OverridesRead): void {
     .exhaustive();
 }
 
-function printWiring(w: WiringReport): void {
+function printToolchain(read: ToolchainRead): void {
+  match(read)
+    .with({ status: "unreadable" }, (r) => console.log(`toolchain     UNREADABLE — ${r.error}`))
+    .with({ status: "read" }, (r) => {
+      if (r.severity === "off") {
+        console.log("toolchain     off");
+        return;
+      }
+      console.log(
+        `toolchain     ${r.severity} — ${r.findings.length} finding(s), ${r.allowed.length} allowed (${r.withoutReason} without a reason)`,
+      );
+      for (const f of r.findings) console.log(`  ${f.kind.padEnd(14)} ${f.where} — ${f.detail}`);
+      for (const a of r.allowed.filter((x) => !x.hasReason)) {
+        console.log(
+          `  override-without-reason  [[toolchain.allow]] tool = "${a.tool}" has no reason`,
+        );
+      }
+    })
+    .exhaustive();
+}
+
+function printWiring(w: WiringReport, toolchainIssues: number): void {
   console.log(`wiring        ${w.state.toUpperCase()}`);
   for (const c of w.checks) {
     console.log(`  ${c.status === "pass" ? "ok  " : "MISS"} ${c.id.padEnd(20)} ${c.detail}`);
@@ -257,4 +324,7 @@ function printWiring(w: WiringReport): void {
     })
     .with({ status: "unreadable" }, (o) => console.log(`  overrides unreadable: ${o.error}`))
     .exhaustive();
+  if (toolchainIssues > 0) {
+    console.log(`  (${toolchainIssues} toolchain finding(s) keep it from ON)`);
+  }
 }
