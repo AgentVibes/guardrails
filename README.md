@@ -53,6 +53,9 @@ All subcommands accept `--json`.
 | `guardrails metrics [paths]` | per-component (loc, hooks, props, observer, JSX depth, branching), per-file (sloc, context-cost) and per-project metrics; `--check` compares the GATED set against the committed `.guardrails/metrics.json` baseline (recomputes facts, never trusts the file); `--update-baseline` tightens it (2% hysteresis, never loosens without `--force`); a gated metric the baseline has no entry for (the file predates the release that gated it) is reported as not yet gated instead of failing, and `--update-baseline` adopts its current value; `--snapshot` appends a JSONL trend row. Both `--check` and `--update-baseline` also run the [per-file length ratchet](#per-file-length-ratchet) | 1 on ratchet regression, 2 when `--check` finds no baseline or the length threshold is invalid |
 | `guardrails snapshot [path]` | records one checkout (default `.`) into the [recording database](#recording), whether or not that repo uses guardrails; writes nothing into it | 2 when the path is not a directory or the record cannot be written; never 1 |
 | `guardrails time [--name N] -- CMD` | runs CMD with its output passed through; while [recording](#recording), stores its wall-clock time in ms as metric N (default `build_ms`) when it exits 0 | CMD's own exit code; 127 when CMD cannot start; 2 on a usage error |
+| `guardrails build\|lint\|typecheck\|test\|format [-- args]` | runs the fastest detected provider for the verb ([Tasks](#tasks)) and records duration as `task:<verb>` | tool's own exit code; 2 if provider binary missing or config invalid |
+| `guardrails run <file> [args]` | runs `<file>` with native Node type stripping (`>= 22.18/23.6`) else `bun`, recording as `task:run` | script's own exit code; 2 if binary missing |
+| `guardrails providers` | lists all task verbs, available providers, which is active and why | 0 (2 on bad `[tasks]` config) |
 
 Gated (ratchet, lower = better): p90 component_loc, useState density,
 inline-map-row count, p90 context-cost, runInAction count, async-in-store,
@@ -842,6 +845,42 @@ Keep local ids distinct from canon ids — ast-grep refuses to load two rules wi
 the same id, and a repo-local override of a canon rule is a silent fork rather
 than a fix. If a local rule turns out to be generally useful, promote it here
 with fixtures instead of copying it into a second repo.
+
+## Tasks
+
+Point `package.json` scripts at `guardrails` instead of wiring slow JS tools by
+hand: `"build": "guardrails build"`, `"lint": "guardrails lint"`,
+`"typecheck": "guardrails typecheck"`, `"test": "guardrails test"`,
+`"format": "guardrails format"`. Each verb detects the fastest applicable
+native/Rust/Go tool in the repo, passes extra arguments after `--` (or after
+`<file>` for `guardrails run`), records its duration under `task:<verb>` when
+`GUARDRAILS_RECORD` is on, and fails loudly (exit 2) with the install hint and
+config key if the active binary is missing.
+
+| verb | default detection order | alternatives |
+|---|---|---|
+| `build` | `next build --turbopack`, `vite build`, `tsdown` (when `exports`/`main` present), `cargo build` (Rust) | `[build] command` / `[tasks.build]` |
+| `lint` | `biome check .` + `guardrails verify-diff` + `guardrails doctor` | `oxlint` (when `.oxlintrc.json` without `biome.json`, or configured) |
+| `typecheck` | `tsc --noEmit` (`typescript >= 7`), `tsgo --noEmit` (`@typescript/native-preview`), `tsc --noEmit` (`typescript < 7`, prints upgrade warning), `cargo check` (Rust) | `tsc`, `tsgo`, `cargo` |
+| `test` | `vitest run`, `bun test`, `node --test`, `cargo nextest run` / `cargo test` (Rust) | `vitest`, `bun`, `node`, `cargo-nextest`, `cargo-test` |
+| `format` | `biome format --write .` | `dprint` (`dprint fmt`) |
+| `run` | `node` (native type stripping on `>= 22.18` / `>= 23.6`), else `bun` | `node`, `bun` |
+
+Run `guardrails providers [--json]` to inspect every verb, which provider is
+active, and why. Override any verb in `.agentvibes/project.toml`:
+
+```toml
+# .agentvibes/project.toml
+[tasks.lint]
+provider = "oxlint"
+
+[tasks.build]
+command = "pnpm --filter web build"
+
+# `[build] command` is also accepted and always wins over detection:
+[build]
+command = "tsc -p tsconfig.build.json"
+```
 
 ## Development
 
