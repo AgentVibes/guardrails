@@ -1,0 +1,52 @@
+# ── the .tsx half of `retired-ui-scope` ────────────────────────────────
+#
+# ast-grep's `typescript` and `tsx` languages are DISJOINT, not nested: a rule
+# at `language: typescript` matches `.ts` and NEVER `.tsx`, so
+# `retired-ui-scope` alone would be blind to every React component file.
+#
+# Keep this file's `severity`, `utils` and `rule:` blocks IDENTICAL to
+# `retired-ui-scope.yml`; `pnpm test:twins` fails when they drift.
+#
+id: retired-ui-scope-tsx
+language: tsx
+severity: error
+message: |
+  Import from a retired UI package scope. The UI packages moved to `@byok-ui/*`
+  (public) and `@byok-ui-private/*` (private):
+    @byoklab/ui-tokens, ui-theme, ui-icons, ui-primitives,
+    ui-components, ui-markdown, ui, editor-core            → @byok-ui/<same name>
+    @agentvibes/ui-*, @agentvibes/editor-core              → @byok-ui/<same name>
+    @byoklab/photo-core, ui-photo, ui-elements,
+    ui-wiredrill                                           → @byok-ui-private/<same name>
+  Suppressing this one needs the id you see above — `ast-grep-ignore: retired-ui-scope-tsx`.
+  `retired-ui-scope` is a DIFFERENT rule (the .ts arm) and does not cover it; ast-grep
+  matches suppression ids exactly.
+utils:
+  retired-ui-source:
+    has:
+      stopBy: end
+      kind: string_fragment
+      regex: '^@(byoklab/(ui(-(tokens|theme|icons|primitives|components|markdown|photo|elements|wiredrill))?|editor-core|photo-core)|agentvibes/(ui-[^/]+|editor-core))(/|$)'
+rule:
+  any:
+    - all:
+        - any:
+            - kind: import_statement
+            - kind: export_statement
+        - has:
+            field: source
+            matches: retired-ui-source
+    - all:
+        - kind: call_expression
+        - has:
+            field: function
+            any:
+              - kind: import
+              - all:
+                  - kind: identifier
+                  - regex: '^require$'
+        - has:
+            field: arguments
+            has:
+              kind: string
+              matches: retired-ui-source

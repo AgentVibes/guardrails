@@ -348,6 +348,18 @@ const EXPECTATIONS: Expectation[] = [
     hits: 5,
     goodSuffix: "demo-mode-by-default/good.tsx",
   },
+  {
+    rule: "retired-ui-scope",
+    badSuffix: "retired-ui-scope/bad.ts",
+    hits: 14,
+    goodSuffix: "retired-ui-scope/good.ts",
+  },
+  {
+    rule: "retired-ui-scope-tsx",
+    badSuffix: "retired-ui-scope/bad.tsx",
+    hits: 14,
+    goodSuffix: "retired-ui-scope/good.tsx",
+  },
 ];
 
 // A file that is deliberately out of scope — same offending code as the bad

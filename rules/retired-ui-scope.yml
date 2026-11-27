@@ -1,0 +1,53 @@
+# ── retired UI package names ───────────────────────────────────────────
+#
+# The shared UI libraries moved out of the `@byoklab` and `@agentvibes` scopes:
+# public packages now live under `@byok-ui/<name>`, private ones under
+# `@byok-ui-private/<name>`. Other `@byoklab/*` packages (`site`, `house`,
+# `site-config`, `site-doctor`, `agent-ui-*`, …) and non-UI `@agentvibes/*`
+# packages (`kit`, `guardrails`, …) stay where they are and must not match.
+#
+# Covers static `import` declarations (value, side-effect and `import type`),
+# re-exports (`export … from`), dynamic `import()` and `require()`, for both
+# the bare package name and any subpath (`@byoklab/ui` and `@byoklab/ui/...`
+# without matching unrelated `@byoklab/ui-*` names outside the retired list).
+#
+id: retired-ui-scope
+language: typescript
+severity: error
+message: |
+  Import from a retired UI package scope. The UI packages moved to `@byok-ui/*`
+  (public) and `@byok-ui-private/*` (private):
+    @byoklab/ui-tokens, ui-theme, ui-icons, ui-primitives,
+    ui-components, ui-markdown, ui, editor-core            → @byok-ui/<same name>
+    @agentvibes/ui-*, @agentvibes/editor-core              → @byok-ui/<same name>
+    @byoklab/photo-core, ui-photo, ui-elements,
+    ui-wiredrill                                           → @byok-ui-private/<same name>
+utils:
+  retired-ui-source:
+    has:
+      stopBy: end
+      kind: string_fragment
+      regex: '^@(byoklab/(ui(-(tokens|theme|icons|primitives|components|markdown|photo|elements|wiredrill))?|editor-core|photo-core)|agentvibes/(ui-[^/]+|editor-core))(/|$)'
+rule:
+  any:
+    - all:
+        - any:
+            - kind: import_statement
+            - kind: export_statement
+        - has:
+            field: source
+            matches: retired-ui-source
+    - all:
+        - kind: call_expression
+        - has:
+            field: function
+            any:
+              - kind: import
+              - all:
+                  - kind: identifier
+                  - regex: '^require$'
+        - has:
+            field: arguments
+            has:
+              kind: string
+              matches: retired-ui-source
