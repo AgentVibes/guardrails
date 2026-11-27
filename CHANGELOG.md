@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Toolchain speed report in `guardrails doctor` (`src/toolchain.ts`,
+  `configs/toolchain.json`).** Scans tracked `package.json` files (root and
+  workspaces, skipping `node_modules`) and `.github/workflows/*.yml|yaml` `run:`
+  lines for `build|lint|typecheck|test|format` scripts that do not call
+  `guardrails <verb>` and for slow JS tools (`eslint`/`@typescript-eslint`,
+  `prettier`, `typescript < 7` without `@typescript/native-preview`, `webpack`,
+  `@babel/core`/`babel-loader`/`babel-jest`, `terser`, `ts-node`, `jest`).
+  Configurable under `[toolchain]` in `.agentvibes/project.toml`
+  (`severity = "warning" | "error" | "off"` and `[[toolchain.allow]]` with
+  non-placeholder reasons).
 - **Task runner subcommands (`build`, `lint`, `typecheck`, `test`, `format`,
   `run`) and `guardrails providers`.** Each verb auto-detects the fastest
   provider in the checkout (`biome`, `oxlint`, `dprint`, `tsc` >= 7 / `tsgo` /

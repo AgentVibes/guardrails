@@ -1,0 +1,77 @@
+{
+  "tools": [
+    {
+      "id": "eslint",
+      "aliases": ["@typescript-eslint"],
+      "packages": ["eslint", "typescript-eslint"],
+      "packagePrefixes": ["@typescript-eslint/"],
+      "commands": ["eslint"],
+      "replacement": "oxlint or biome",
+      "why": "JS-based linter; oxlint or biome is native and much faster"
+    },
+    {
+      "id": "prettier",
+      "aliases": [],
+      "packages": ["prettier", "eslint-plugin-prettier", "eslint-config-prettier"],
+      "packagePrefixes": [],
+      "commands": ["prettier"],
+      "replacement": "biome",
+      "why": "JS-based formatter; biome formats in native Rust"
+    },
+    {
+      "id": "typescript",
+      "aliases": [],
+      "packages": ["typescript"],
+      "packagePrefixes": [],
+      "commands": [],
+      "maxMajorExclusive": 7,
+      "replacement": "typescript >= 7 (or @typescript/native-preview)",
+      "why": "typescript < 7 runs on JS; TypeScript 7 (tsgo) is native Go"
+    },
+    {
+      "id": "webpack",
+      "aliases": [],
+      "packages": ["webpack", "webpack-cli", "webpack-dev-server"],
+      "packagePrefixes": [],
+      "commands": ["webpack"],
+      "replacement": "rspack or rolldown",
+      "why": "JS-based bundler; rspack and rolldown are native Rust"
+    },
+    {
+      "id": "babel",
+      "aliases": ["@babel/core", "babel-loader", "babel-jest"],
+      "packages": ["@babel/core", "babel-loader", "babel-jest"],
+      "packagePrefixes": [],
+      "commands": ["babel"],
+      "replacement": "swc or oxc",
+      "why": "JS-based transpiler; swc and oxc transform in native Rust"
+    },
+    {
+      "id": "terser",
+      "aliases": [],
+      "packages": ["terser", "terser-webpack-plugin"],
+      "packagePrefixes": [],
+      "commands": ["terser"],
+      "replacement": "oxc or swc",
+      "why": "JS-based minifier; oxc and swc minify in native Rust"
+    },
+    {
+      "id": "ts-node",
+      "aliases": [],
+      "packages": ["ts-node", "ts-node-dev"],
+      "packagePrefixes": [],
+      "commands": ["ts-node", "ts-node-dev"],
+      "replacement": "guardrails run",
+      "why": "transpiles TS in JS at startup; guardrails run uses native Node type stripping or bun"
+    },
+    {
+      "id": "jest",
+      "aliases": [],
+      "packages": ["jest", "@types/jest", "ts-jest"],
+      "packagePrefixes": [],
+      "commands": ["jest"],
+      "replacement": "vitest",
+      "why": "heavy JS test runner; vitest is faster and shares the Vite/rolldown pipeline"
+    }
+  ]
+}

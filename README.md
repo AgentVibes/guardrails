@@ -882,6 +882,44 @@ command = "pnpm --filter web build"
 command = "tsc -p tsconfig.build.json"
 ```
 
+## Toolchain speed
+
+`guardrails doctor` (and `doctor --json`) scans every tracked `package.json`
+(root and workspaces, skipping `node_modules`) and `.github/workflows/*.yml|yaml`
+`run:` lines for two kinds of slowdowns:
+
+1. **Task script bypasses:** a `build`, `lint`, `typecheck`, `test`, or
+   `format` script in `package.json` that does not call `guardrails <verb>`.
+2. **Slow JS tools** defined in `configs/toolchain.json`:
+
+| tool / package | replacement |
+|---|---|
+| `eslint`, `@typescript-eslint/*` | `oxlint` or `biome` |
+| `prettier` | `biome` |
+| `typescript` (`< 7`, without `@typescript/native-preview`) | `typescript >= 7` (or `@typescript/native-preview`) |
+| `webpack` | `rspack` or `rolldown` |
+| `@babel/core`, `babel-loader`, `babel-jest` | `swc` or `oxc` |
+| `terser` | `oxc` or `swc` |
+| `ts-node` | `guardrails run` |
+| `jest` | `vitest` |
+
+Configure `[toolchain]` in `.agentvibes/project.toml`:
+
+```toml
+[toolchain]
+severity = "warning"   # "warning" (default) | "error" | "off"
+
+[[toolchain.allow]]
+tool = "webpack"
+reason = "custom loader plugin not yet migrated to rspack"
+```
+
+- With `severity = "warning"` (default), `doctor`'s exit code is unchanged and
+  `wiring` becomes `partial` while findings remain.
+- With `severity = "error"`, `doctor` exits 1 and names every finding.
+- A `[[toolchain.allow]]` entry with an empty or placeholder (`<...>`) reason
+  counts as an override without a reason and does not suppress the finding.
+
 ## Development
 
 `pnpm check` = build (tsc) + biome + fixture harness + twin coverage +

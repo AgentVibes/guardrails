@@ -29,7 +29,7 @@ const HOOKS = (post: string, stop: string): string =>
 const BIOME = `${JSON.stringify({ extends: ["@agentvibes/guardrails/biome"] })}\n`;
 
 const WIRED: Record<string, string> = {
-  "package.json": PKG({ lint: "biome check . && guardrails verify ." }),
+  "package.json": PKG({ lint: "guardrails lint" }),
   "sgconfig.yml": SG,
   ".github/workflows/ci.yml":
     "jobs:\n  g:\n    uses: AgentVibes/guardrails/.github/workflows/guardrails-gate.yml@v0\n",
@@ -43,7 +43,7 @@ const WIRED: Record<string, string> = {
 
 const SELF_RULES: Record<string, string> = {
   ...WIRED,
-  "package.json": `${JSON.stringify({ name: "@agentvibes/guardrails", scripts: { lint: "guardrails verify-diff" } })}\n`,
+  "package.json": `${JSON.stringify({ name: "@agentvibes/guardrails", scripts: { lint: "guardrails lint" } })}\n`,
   // The canon's own rule dir and a rule fixture whose suppression is the point
   // of the fixture: neither is a repo rule shadowing the canon or an override.
   "sgconfig.yml": "ruleDirs:\n  - rules\n",
@@ -65,6 +65,8 @@ interface Case {
   failing: WiringCheckId[];
   /** When set: exactly these checks pass with an upgrade hint (the old unguarded hook form). */
   hinted?: WiringCheckId[];
+  /** Override expected doctor wiring.state when toolchain bypasses downgrade doctor to partial. */
+  doctorState?: WiringState;
 }
 
 // The guarded form init writes now (claudeHooks.ts), for a pnpm repo.
@@ -148,6 +150,7 @@ const CASES: Case[] = [
       ".github/workflows/ci.yml": "jobs: {}\n",
     },
     state: "on",
+    doctorState: "partial",
     failing: [],
   },
   {
@@ -212,7 +215,8 @@ function main(): number {
         hintsOk && w.state === c.state && JSON.stringify(failing) === JSON.stringify(c.failing);
       // doctor's exit code is the tools + drift verdict only; none of these trees drift.
       const exitOk = doctor.status === 0;
-      if (!ok || fromDoctor !== c.state || !exitOk) {
+      const wantDoctor = c.doctorState ?? c.state;
+      if (!ok || fromDoctor !== wantDoctor || !exitOk) {
         failed += 1;
         console.error(
           `FAIL wiring: ${c.name}\n  hinted ${JSON.stringify(hinted)}, want ${JSON.stringify(c.hinted)}\n  state ${w.state} (doctor ${fromDoctor}, exit ${doctor.status}), want ${c.state}\n  failing ${JSON.stringify(failing)}, want ${JSON.stringify(c.failing)}\n${JSON.stringify(w.checks, null, 2)}`,

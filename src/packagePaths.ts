@@ -11,6 +11,7 @@ export const rulesDir = join(packageRoot, "rules");
 export const structureRulesDir = join(packageRoot, "structure", "rules");
 export const fixturesDir = join(packageRoot, "rules", "__fixtures__");
 export const miseToml = join(packageRoot, "mise.toml");
+export const toolchainConfig = join(packageRoot, "configs", "toolchain.json");
 
 export const PACKAGE_NAME = "@agentvibes/guardrails";
 
