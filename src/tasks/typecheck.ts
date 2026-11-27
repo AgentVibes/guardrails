@@ -9,7 +9,7 @@ import {
 } from "./resolveBinary.js";
 import type { TaskProvider } from "./types.js";
 
-function typescriptVersionInfo(root: string): { version?: string; major?: number } {
+function typescriptVersionInfo(root: string): { version?: string; major?: number | undefined } {
   const installed = installedPackageVersion(root, "typescript");
   if (installed !== undefined) {
     return { version: installed, major: parseMajorVersion(installed) };

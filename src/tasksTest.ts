@@ -37,7 +37,7 @@ function resolvedProvider(
   root: string,
   args: readonly string[] = [],
   ctx?: TaskContext,
-): { id: string; argv: string[]; warning?: string } {
+): { id: string; argv: string[]; warning?: string | undefined } {
   const r = resolveTask(verb, root, args, ctx);
   return match(r)
     .with({ status: "provider" }, (p) => ({
