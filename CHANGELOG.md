@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **`retired-ui-scope` and `retired-ui-scope-tsx` ban imports from retired UI
+  package scopes.** Error-tier ast-grep rule pair covering `import`
+  declarations, `export … from`, dynamic `import()` and `require()`, for both
+  bare package specifiers and subpaths. Flags the public UI packages retired
+  from `@byoklab/*` (`ui-tokens`, `ui-theme`, `ui-icons`, `ui-primitives`,
+  `ui-components`, `ui-markdown`, `ui`, `editor-core`) and `@agentvibes/*`
+  (`ui-*`, `editor-core`) with `@byok-ui/<same name>` as the replacement, and
+  the private UI packages retired from `@byoklab/*` (`photo-core`, `ui-photo`,
+  `ui-elements`, `ui-wiredrill`) with `@byok-ui-private/<same name>`. Other
+  `@byoklab/*` packages (`site`, `house`, `site-config`, `site-doctor`,
+  `agent-ui-*`, …) and non-UI `@agentvibes/*` packages are untouched.
+
 ## 0.4.5 (2026-11-25)
 
 - **`[verify] exclude` applies to the full scan.** `verify` (without a
